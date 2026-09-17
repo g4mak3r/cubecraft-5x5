@@ -13,18 +13,18 @@ button{font:inherit;color:inherit}.app{max-width:540px;margin:auto;min-height:10
 .primary,.secondary{width:100%;border:0;border-radius:18px;padding:17px 18px;font-weight:750;cursor:pointer}.primary{background:#f5f7fb;color:#080a0e}.secondary{background:#171c25;border:1px solid var(--line)}.primary:disabled{opacity:.35}
 .screen{display:none}.screen.active{display:flex;flex-direction:column;gap:14px;flex:1}.camera{position:relative;aspect-ratio:1/1;border-radius:28px;overflow:hidden;background:#111722;border:1px solid var(--line)}video{width:100%;height:100%;object-fit:cover}.shade{position:absolute;inset:0;background:linear-gradient(#0002,#0000 25%,#0000 75%,#0004);pointer-events:none}
 .gridOverlay{position:absolute;inset:12%;display:grid;grid-template-columns:repeat(5,1fr);grid-template-rows:repeat(5,1fr);border:2px solid #fff;border-radius:14px;box-shadow:0 0 0 999px #0005}.gridOverlay i{border:1px solid #ffffff66}
-.guide{text-align:center}.guide h2{font-size:26px;margin:0 0 5px;letter-spacing:-.04em}.guide p{margin:0;color:var(--muted)}
+.guide{text-align:center}.guide h2{font-size:26px;margin:0 0 5px;letter-spacing:-.04em}.guide p{margin:0;color:var(--muted)} .cword{font-weight:850;text-shadow:0 0 14px currentColor}.cw{color:#fff}.cy{color:#f3d638}.cg{color:#39c875}.cb{color:#5790ff}.co{color:#ff9b3d}.cr{color:#ff5260}
 .progress{display:grid;grid-template-columns:repeat(6,1fr);gap:7px}.dot{height:5px;background:#ffffff18;border-radius:9px}.dot.done,.dot.now{background:#e9eef8}.dot.now{box-shadow:0 0 12px #fff8}
 .facegrid{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;padding:18px}.sticker{aspect-ratio:1;border:0;border-radius:12px;box-shadow:inset 0 0 0 1px #0003,0 4px 12px #0003}.sticker.center{outline:2px solid #fff;outline-offset:2px}
 .row{display:flex;gap:10px}.row>*{flex:1}.small{font-size:12px;color:var(--muted)}.status{padding:14px 16px;border-radius:18px;background:#10151d;border:1px solid var(--line);color:#cbd2df}
 .palette{display:flex;justify-content:center;gap:9px;flex-wrap:wrap}.swatch{width:40px;height:40px;border-radius:50%;border:2px solid #ffffff44}
-.steps{display:flex;gap:8px;overflow:auto;padding:4px 1px 10px}.move{min-width:62px;padding:14px 12px;text-align:center;border-radius:16px;background:#121821;border:1px solid var(--line);font-weight:800;font-size:18px}.move.current{background:#f3f6fb;color:#090b0f}.bigmove{text-align:center;font-size:64px;font-weight:850;letter-spacing:-.06em;padding:22px 0}.meta{text-align:center;color:var(--muted)}
+.steps{display:flex;gap:8px;overflow:auto;padding:4px 1px 10px}.move{min-width:62px;padding:14px 12px;text-align:center;border-radius:16px;background:#121821;border:1px solid var(--line);font-weight:800;font-size:18px}.move.current{background:#f3f6fb;color:#090b0f}.bigmove{text-align:center;font-size:64px;font-weight:850;letter-spacing:-.06em;padding:22px 0}.meta{text-align:center;color:var(--muted)} .explain{display:block;margin-top:8px;color:var(--muted);font-size:14px;line-height:1.4}
 .spinner{width:44px;height:44px;border:4px solid #ffffff1d;border-top-color:#fff;border-radius:50%;animation:spin .8s linear infinite;margin:30px auto}@keyframes spin{to{transform:rotate(360deg)}}
 canvas{display:none}
 </style>
 </head>
 <body><main class="app">
-<div class="brand"><b>CUBECRAFT</b><span class="pill">5×5 · WASM · v6</span></div>
+<div class="brand"><b>CUBECRAFT</b><span class="pill">5×5 · WASM · v8</span></div>
 
 <section id="home" class="screen active">
  <div class="card hero"><div class="pill" style="display:inline-block">CAMERA + LOCAL SOLVER</div><h1>Solve a 5×5<br>from your camera.</h1><p>Six faces. 150 stickers. The solve runs locally on your device and is replay-verified before you see it.</p></div>
@@ -62,9 +62,9 @@ canvas{display:none}
 
 <section id="result" class="screen">
  <div class="card hero"><div class="pill" style="display:inline-block">REPLAY VERIFIED ✓</div><h1 id="resultTitle">Solution ready</h1><p id="resultMeta"></p></div>
- <div class="bigmove" id="bigmove">R</div><div class="steps" id="steps"></div>
- <div class="row"><button class="secondary" id="prevMove">← PREV</button><button class="primary" id="nextMove">NEXT →</button></div>
- <button class="secondary" id="newCube">SCAN ANOTHER CUBE</button>
+ <div class="bigmove" id="bigmove">R</div><div class="status" id="moveInstruction" style="text-align:center;font-size:17px;line-height:1.5"></div><div id="sliceViz" style="display:flex;gap:5px;justify-content:center;align-items:flex-end;height:74px;padding:10px 4px"></div><div class="steps" id="steps"></div>
+ <div class="row"><button class="secondary" id="prevMove">← НАЗАД</button><button class="primary" id="nextMove">ДАЛЬШЕ →</button></div>
+ <button class="secondary" id="newCube">СКАНИРОВАТЬ ДРУГОЙ КУБ</button>
 </section>
 <canvas id="sample" width="500" height="500"></canvas>
 </main>
@@ -72,20 +72,21 @@ canvas{display:none}
 import init, { CubeLab } from './pkg/cube_wasm.js';
 
 const FACES=[
- {name:'UP',center:'WHITE',idx:0,hint:'White center facing camera. IMPORTANT: keep the GREEN face toward the BOTTOM of the screen.'},
- {name:'DOWN',center:'YELLOW',idx:1,hint:'Yellow center facing camera. IMPORTANT: keep the GREEN face toward the TOP of the screen. This is opposite to the UP-face capture.'},
- {name:'FRONT',center:'GREEN',idx:2,hint:'Green center facing camera. Keep WHITE toward the ceiling.'},
- {name:'BACK',center:'BLUE',idx:3,hint:'Blue center facing camera. Keep WHITE toward the ceiling.'},
- {name:'LEFT',center:'ORANGE',idx:4,hint:'Orange center facing camera. Keep WHITE toward the ceiling.'},
- {name:'RIGHT',center:'RED',idx:5,hint:'Red center facing camera. Keep WHITE toward the ceiling.'}
+ {name:'ВЕРХ',center:'БЕЛЫЙ',idx:0,hint:'БЕЛАЯ центральная наклейка смотрит в камеру. ЗЕЛЕНАЯ грань должна быть СНИЗУ экрана.'},
+ {name:'НИЗ',center:'ЖЕЛТЫЙ',idx:1,hint:'ЖЕЛТАЯ центральная наклейка смотрит в камеру. ЗЕЛЕНАЯ грань должна быть СВЕРХУ экрана.'},
+ {name:'ПЕРЕД',center:'ЗЕЛЕНЫЙ',idx:2,hint:'ЗЕЛЕНАЯ центральная наклейка смотрит в камеру. БЕЛАЯ грань должна быть СВЕРХУ.'},
+ {name:'ЗАД',center:'СИНИЙ',idx:3,hint:'СИНЯЯ центральная наклейка смотрит в камеру. БЕЛАЯ грань должна быть СВЕРХУ.'},
+ {name:'ЛЕВО',center:'ОРАНЖЕВЫЙ',idx:4,hint:'ОРАНЖЕВАЯ центральная наклейка смотрит в камеру. БЕЛАЯ грань должна быть СВЕРХУ.'},
+ {name:'ПРАВО',center:'КРАСНЫЙ',idx:5,hint:'КРАСНАЯ центральная наклейка смотрит в камеру. БЕЛАЯ грань должна быть СВЕРХУ.'}
 ];
 const CSS=['#f4f4f1','#f3d638','#28a35d','#3373d6','#f28a2c','#d53b45'];
-let face=0, raw=Array(6).fill(null), classified=Array(6).fill(null), manual=Array.from({length:6},()=>Array(25).fill(null)), selectedColor=0, stream=null, solution=[], step=0, solverReady=false;
+let face=0, raw=Array(6).fill(null), classified=Array(6).fill(null), manual=Array.from({length:6},()=>Array(25).fill(null)), selectedColor=0, stream=null, solution=[], moveSpecs=[], step=0, solverReady=false;
 const $=s=>document.querySelector(s), screens=[...document.querySelectorAll('.screen')];
 function show(id){screens.forEach(x=>x.classList.toggle('active',x.id===id));}
 for(let i=0;i<25;i++) $('#overlay').append(document.createElement('i'));
 function progress(){ $('#progress').innerHTML=FACES.map((_,i)=>`<i class="dot ${raw[i]?'done':''} ${i===face?'now':''}"></i>`).join('');}
-function guide(){let f=FACES[face];$('#faceTitle').textContent=`${f.name} · ${f.center} CENTER`;$('#faceHint').textContent=f.hint;progress();}
+function colorWords(t){return t.replace(/WHITE|White|БЕЛЫЙ|БЕЛАЯ|БЕЛОЙ|БЕЛУЮ/g,m=>`<span class="cword cw">${m}</span>`).replace(/YELLOW|Yellow|ЖЕЛТЫЙ|ЖЕЛТАЯ|ЖЕЛТОЙ|ЖЕЛТУЮ/g,m=>`<span class="cword cy">${m}</span>`).replace(/GREEN|Green|ЗЕЛЕНЫЙ|ЗЕЛЕНАЯ|ЗЕЛЕНОЙ|ЗЕЛЕНУЮ/g,m=>`<span class="cword cg">${m}</span>`).replace(/BLUE|Blue|СИНИЙ|СИНЯЯ|СИНЕЙ|СИНЮЮ/g,m=>`<span class="cword cb">${m}</span>`).replace(/ORANGE|Orange|ОРАНЖЕВЫЙ|ОРАНЖЕВАЯ|ОРАНЖЕВОЙ|ОРАНЖЕВУЮ/g,m=>`<span class="cword co">${m}</span>`).replace(/RED|Red|КРАСНЫЙ|КРАСНАЯ|КРАСНОЙ|КРАСНУЮ/g,m=>`<span class="cword cr">${m}</span>`)}
+function guide(){let f=FACES[face];$('#faceTitle').innerHTML=colorWords(`${f.name} · ${f.center} CENTER`);$('#faceHint').innerHTML=colorWords(f.hint);progress();}
 async function camera(){
  try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:1280}},audio:false});$('#video').srcObject=stream;}
  catch(e){alert('Camera permission is required. Open this page over HTTPS and allow Camera.');show('home');}
@@ -233,7 +234,7 @@ function solveCandidate(colors,serial,total){return new Promise(async(resolve,re
  try{
   const pre=new CubeLab(5);if(!pre.load_face_colors(colors))return resolve(null);
   $('#workStatus').textContent=`Geometry ${serial}/${total} · running verified 5×5 reduction…`;
-  const worker=new Worker('./solver-worker.js?v=6',{type:'module'}),jobId=Date.now()+serial;
+  const worker=new Worker('./solver-worker.js?v=8',{type:'module'}),jobId=Date.now()+serial;
   const timer=setTimeout(()=>{worker.terminate();resolve(null)},45000);
   worker.onmessage=e=>{const d=e.data||{};
    if(d.type==='ready'){worker.postMessage({type:'solve',jobId,n:5,depth:9,time:30000,colors});return}
@@ -262,13 +263,33 @@ $('#solve').onclick=async()=>{
   let win=null;
   for(let i=0;i<candidates.length&&!win;i++)win=await solveCandidate(candidates[i].colors,i+1,candidates.length);
   if(!win)throw Error(`Geometry was resolved (${candidates.length} candidate${candidates.length===1?'':'s'}), but Cube-Solver found no replay-verified solution. This now points to a sticker color error, not face orientation.`);
-  solution=win.r.notation||[];step=0;renderSolution(win.r);
+  solution=win.r.notation||[];moveSpecs=win.r.moveSpecs||[];step=0;renderSolution(win.r);
   $('#resultMeta').textContent='Auto-oriented U/D/F/B/L/R geometry · Cube-Solver reduction · replay verified';show('result');
  }catch(e){fail(e.message||String(e))}
 };
 function fail(m){show('verify');$('#validation').textContent='Solver: '+m}
-function renderSolution(r){$('#resultTitle').textContent=`${solution.length} moves`;$('#resultMeta').textContent='Deterministic reduction · independently replay verified';renderStep()}
-function renderStep(){if(!solution.length)return;step=Math.max(0,Math.min(step,solution.length-1));$('#bigmove').textContent=solution[step];$('#steps').innerHTML=solution.map((m,i)=>`<div class="move ${i===step?'current':''}">${m}</div>`).join('');setTimeout(()=>document.querySelector('.move.current')?.scrollIntoView({behavior:'smooth',inline:'center',block:'nearest'}),0);$('#prevMove').disabled=step===0;$('#nextMove').textContent=step===solution.length-1?'DONE ✓':'NEXT →'}
+const FACE_INFO={U:['БЕЛУЮ','cw'],D:['ЖЕЛТУЮ','cy'],F:['ЗЕЛЕНУЮ','cg'],B:['СИНЮЮ','cb'],L:['ОРАНЖЕВУЮ','co'],R:['КРАСНУЮ','cr']};
+const FACE_RU={U:'верхнюю',D:'нижнюю',F:'переднюю',B:'заднюю',L:'левую',R:'правую'};
+function turnText(ft){if(ft===2)return 'на 180°';return ft===3?'на 90° против часовой стрелки':'на 90° по часовой стрелке'}
+function humanMove(spec,raw){
+ if(!spec)return {label:raw,text:`Выполните ход <b>${raw}</b>.`,face:null,depth:1,dir:''};
+ const n=5, axis=spec.axis, a=spec.start,b=spec.end,t=spec.turns;
+ const posFace=['R','U','F'][axis], negFace=['L','D','B'][axis];
+ let face,width,ft;
+ if(b===n-1){face=posFace;width=b-a+1;ft=t}
+ else if(a===0){face=negFace;width=b-a+1;ft=-t}
+ if(face){
+   ft=((ft%4)+4)%4; let suf=ft===3?"'":ft===2?'2':''; let label=(width===1?face:(width===2?face+'w':width+face+'w'))+suf;
+   let [col,cl]=FACE_INFO[face], what=width===1?`${FACE_RU[face]} грань`:`${width===2?'два':'три'} внешних слоя вместе`;
+   return {label,text:`Держите куб <span class="cword ${cl}">${col}</span> гранью к себе. Поверните <b>${what}</b> ${turnText(ft)}. <span class="explain">Направление считается, когда вы смотрите прямо на эту грань.</span>`,face,depth:width,dir:turnText(ft),wide:width};
+ }
+ const dPos=n-a, dNeg=b+1, usePos=dPos<=dNeg; face=usePos?posFace:negFace; let depth=usePos?dPos:dNeg; ft=usePos?t:-t; ft=((ft%4)+4)%4;
+ let [col,cl]=FACE_INFO[face]; let ord=['','первый','второй','третий','четвертый','пятый'][depth];
+ return {label:raw,text:`Держите куб <span class="cword ${cl}">${col}</span> гранью к себе. Поверните <b>только ${ord} слой от этой грани</b> ${turnText(ft)}. <span class="explain">Сама ${FACE_RU[face]} внешняя грань остается на месте. Двигайте только подсвеченный внутренний слой.</span>`,face,depth,dir:turnText(ft),inner:true};
+}
+function sliceViz(h){let html='';for(let i=1;i<=5;i++){let active=h.inner?i===h.depth:i<=Math.max(1,h.wide||1);html+=`<div style="width:42px;height:${28+i*6}px;border-radius:8px;border:1px solid #ffffff24;background:${active?'#f3f6fb':'#151b24'};box-shadow:${active?'0 0 18px #fff5':'none'}"><div style="font-size:10px;text-align:center;padding-top:7px;color:${active?'#080a0e':'#7e8797'}">${i}</div></div>`}return html}
+function renderSolution(r){$('#resultTitle').textContent=`Решение: ${solution.length} ходов`;$('#resultMeta').textContent='Решение проверено независимым повторным проигрыванием';renderStep()}
+function renderStep(){if(!solution.length)return;step=Math.max(0,Math.min(step,solution.length-1));let h=humanMove(moveSpecs[step],solution[step]);$('#bigmove').textContent=h.label;$('#moveInstruction').innerHTML=`<b>Шаг ${step+1} из ${solution.length}</b><br>${h.text}`;$('#sliceViz').innerHTML=sliceViz(h);$('#steps').innerHTML=solution.map((m,i)=>`<div class="move ${i===step?'current':''}">${humanMove(moveSpecs[i],m).label}</div>`).join('');setTimeout(()=>document.querySelector('.move.current')?.scrollIntoView({behavior:'smooth',inline:'center',block:'nearest'}),0);$('#prevMove').disabled=step===0;$('#nextMove').textContent=step===solution.length-1?'ГОТОВО ✓':'ДАЛЬШЕ →'}
 $('#prevMove').onclick=()=>{step--;renderStep()};$('#nextMove').onclick=()=>{if(step<solution.length-1){step++;renderStep()}else show('home')};$('#newCube').onclick=()=>show('home');
-if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js?v=6').catch(()=>{});
+if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js?v=8').catch(()=>{});
 </script></body></html>

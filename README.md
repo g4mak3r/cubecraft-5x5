@@ -27,3 +27,17 @@ Before a scan is sent to reduction, v3 enumerates in-plane face rotations and fi
 
 ## CUBECRAFT v6 geometry
 Camera grids are converted to Cube-Solver U,D,F,B,L,R coordinates by enumerating the four in-plane rotations per face, filtering with the exact 8 corner color triples and 12 edge color pairs (three edgelets each on 5x5), then accepting only a Cube-Solver reduction result that independently replays to solved. No mirroring is applied.
+
+
+## CUBECRAFT v7
+- WASM now returns exact high-level move ranges (`moveSpecs`) in addition to animation quarter-turns.
+- Internal reduction notation such as `Z[1..=1]` is translated into physical human instructions.
+- Every step tells the user which coloured face to hold toward them, which slice/layers to turn, and the direction.
+- Scan guidance colour names are rendered in their actual colours.
+
+
+## CUBECRAFT v8
+- Russian step-by-step solve guidance.
+- Human descriptions for outer, wide and inner-slice turns.
+- Russian color words remain color-highlighted.
+- Keeps standard move notation as a compact secondary reference.

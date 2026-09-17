@@ -273,8 +273,15 @@ impl CubeLab {
         let size = cube_core::CubeSize::new(3).ok()?;
         let mut moves_json: Vec<serde_json::Value> = Vec::new();
         let mut notation: Vec<String> = Vec::new();
+        let mut move_specs: Vec<serde_json::Value> = Vec::new();
         for m in &solution {
             notation.push(m.notation(size));
+            move_specs.push(serde_json::json!({
+                "axis": axis_index(m.axis),
+                "start": m.layer_start,
+                "end": m.layer_end,
+                "turns": m.turns
+            }));
             let axis = axis_index(m.axis);
             let (count, dir): (usize, i32) = match m.turns.rem_euclid(4) {
                 1 => (1, 1),
@@ -304,6 +311,7 @@ impl CubeLab {
                 "elapsedMs": 0,
                 "moves": moves_json,
                 "notation": notation,
+                "moveSpecs": move_specs,
                 "lanes": [ { "id": "kociemba", "pct": 100, "moveCount": htm, "label": "two-phase", "solved": true } ],
             })
             .to_string(),
@@ -345,8 +353,15 @@ impl CubeLab {
         let size = CubeSize::new(self.n).ok()?;
         let mut moves_json: Vec<serde_json::Value> = Vec::new();
         let mut notation: Vec<String> = Vec::new();
+        let mut move_specs: Vec<serde_json::Value> = Vec::new();
         for m in &solution {
             notation.push(m.notation(size));
+            move_specs.push(serde_json::json!({
+                "axis": axis_index(m.axis),
+                "start": m.layer_start,
+                "end": m.layer_end,
+                "turns": m.turns
+            }));
             let axis = axis_index(m.axis);
             let (count, dir): (usize, i32) = match m.turns.rem_euclid(4) {
                 1 => (1, 1),
@@ -371,6 +386,7 @@ impl CubeLab {
                 "elapsedMs": 0,
                 "moves": moves_json,
                 "notation": notation,
+                "moveSpecs": move_specs,
                 "lanes": [ { "id": "reduction", "pct": 100, "moveCount": htm, "label": "reduction", "solved": true } ],
             })
             .to_string(),

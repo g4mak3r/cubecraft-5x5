@@ -23,3 +23,7 @@ The camera grid is converted to the solver's exact `Face::ALL` order: Up, Down, 
 Before a scan is sent to reduction, v3 enumerates in-plane face rotations and filters them against all eight legal/unique corner color triples. It then accepts an orientation only if the actual reduction result independently replays to solved.
 
 `/selftest.html` bypasses the camera entirely: it creates a legal 5×5 scramble inside CubeLab, exports only its 150 sticker colors, sends those through the same Web Worker, and independently replays the returned moves. PASS proves the deployed solver pipeline itself is working.
+
+
+## CUBECRAFT v6 geometry
+Camera grids are converted to Cube-Solver U,D,F,B,L,R coordinates by enumerating the four in-plane rotations per face, filtering with the exact 8 corner color triples and 12 edge color pairs (three edgelets each on 5x5), then accepting only a Cube-Solver reduction result that independently replays to solved. No mirroring is applied.

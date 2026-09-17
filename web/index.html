@@ -24,7 +24,7 @@ canvas{display:none}
 </style>
 </head>
 <body><main class="app">
-<div class="brand"><b>CUBECRAFT</b><span class="pill">5×5 · WASM · v9</span></div>
+<div class="brand"><b>CUBECRAFT</b><span class="pill">5×5 · WASM · v11</span></div>
 
 <section id="home" class="screen active">
  <div class="card hero"><div class="pill" style="display:inline-block">CAMERA + LOCAL SOLVER</div><h1>Solve a 5×5<br>from your camera.</h1><p>Six faces. 150 stickers. The solve runs locally on your device and is replay-verified before you see it.</p></div>
@@ -62,7 +62,7 @@ canvas{display:none}
 
 <section id="result" class="screen">
  <div class="card hero"><div class="pill" style="display:inline-block">REPLAY VERIFIED ✓</div><h1 id="resultTitle">Solution ready</h1><p id="resultMeta"></p></div>
- <div class="bigmove" id="bigmove">R</div><div class="status" id="moveInstruction" style="text-align:center;font-size:17px;line-height:1.5"></div><div id="sliceViz" style="display:flex;gap:5px;justify-content:center;align-items:flex-end;height:74px;padding:10px 4px"></div><div class="steps" id="steps"></div>
+ <div id="cube3d" style="height:290px;margin:10px 0;border-radius:24px;background:radial-gradient(circle at 50% 35%,#27303d,#0a0d12 68%);position:relative;overflow:hidden;perspective:700px"></div><div class="bigmove" id="bigmove">R</div><div class="status" id="moveInstruction" style="text-align:center;font-size:17px;line-height:1.5"></div><div id="sliceViz" style="display:flex;gap:5px;justify-content:center;align-items:flex-end;height:74px;padding:10px 4px"></div><div class="steps" id="steps"></div>
  <div class="row"><button class="secondary" id="prevMove">← НАЗАД</button><button class="primary" id="nextMove">ДАЛЬШЕ →</button></div>
  <button class="secondary" id="newCube">СКАНИРОВАТЬ ДРУГОЙ КУБ</button>
 </section>
@@ -80,7 +80,7 @@ const FACES=[
  {name:'ПРАВО',center:'КРАСНЫЙ',idx:5,hint:'КРАСНАЯ центральная наклейка смотрит в камеру. БЕЛАЯ грань должна быть СВЕРХУ.'}
 ];
 const CSS=['#f4f4f1','#f3d638','#28a35d','#3373d6','#f28a2c','#d53b45'];
-let face=0, raw=Array(6).fill(null), classified=Array(6).fill(null), manual=Array.from({length:6},()=>Array(25).fill(null)), selectedColor=0, stream=null, solution=[], moveSpecs=[], step=0, solverReady=false;
+let face=0, raw=Array(6).fill(null), classified=Array(6).fill(null), manual=Array.from({length:6},()=>Array(25).fill(null)), selectedColor=0, stream=null, solution=[], moveSpecs=[], step=0, solverReady=false, solveStartColors=null;
 const $=s=>document.querySelector(s), screens=[...document.querySelectorAll('.screen')];
 function show(id){screens.forEach(x=>x.classList.toggle('active',x.id===id));}
 for(let i=0;i<25;i++) $('#overlay').append(document.createElement('i'));
@@ -278,7 +278,7 @@ $('#solve').onclick=async()=>{
   let win=null;
   for(let i=0;i<candidates.length&&!win;i++)win=await solveCandidate(candidates[i].colors,i+1,candidates.length);
   if(!win)throw Error(`Geometry was resolved (${candidates.length} candidate${candidates.length===1?'':'s'}), but Cube-Solver found no replay-verified solution. This now points to a sticker color error, not face orientation.`);
-  solution=win.r.notation||[];moveSpecs=win.r.moveSpecs||[];step=0;renderSolution(win.r);
+  solution=win.r.notation||[];moveSpecs=win.r.moveSpecs||[];solveStartColors=win.colors.slice();step=0;renderSolution(win.r);
   $('#resultMeta').textContent='Auto-oriented U/D/F/B/L/R geometry · Cube-Solver reduction · replay verified';show('result');
  }catch(e){fail(e.message||String(e))}
 };
@@ -287,27 +287,52 @@ const FACE_INFO={U:['БЕЛАЯ','cw'],D:['ЖЕЛТАЯ','cy'],F:['ЗЕЛЕНА�
 const FACE_RU={U:'верхнюю белую',D:'нижнюю желтую',F:'переднюю зеленую',B:'заднюю синюю',L:'левую оранжевую',R:'правую красную'};
 function turnText(ft){if(ft===2)return 'на 180°';return ft===3?'на 90° против часовой стрелки':'на 90° по часовой стрелке'}
 function humanMove(spec,raw){
- if(!spec)return {label:raw,text:`Выполните <b>${raw}</b>. Положение всего куба не меняйте.`,face:null,depth:1,dir:''};
- const n=5,axis=spec.axis,a=spec.start,b=spec.end,t=spec.turns,posFace=['R','U','F'][axis],negFace=['L','D','B'][axis];
- let face,width,ft;
+ if(!spec)return {label:raw,text:`Выполните <b>${raw}</b>.`,face:null,depth:1};
+ const n=5,axis=spec.axis,a=spec.start,b=spec.end,t=spec.turns,posFace=['R','U','F'][axis],negFace=['L','D','B'][axis];let face,width,ft;
  if(b===n-1){face=posFace;width=b-a+1;ft=t}else if(a===0){face=negFace;width=b-a+1;ft=-t}
- if(face){
-  ft=((ft%4)+4)%4;let suf=ft===3?"'":ft===2?'2':'';let label=(width===1?face:(width===2?face+'w':width+face+'w'))+suf;
+ if(face){ft=((ft%4)+4)%4;let suf=ft===3?"'":ft===2?'2':'';let label=(width===1?face:(width===2?face+'w':width+face+'w'))+suf;
   let what=width===1?`${FACE_RU[face]} грань`:`${width===2?'два':'три'} слоя со стороны ${FACE_RU[face].split(' ')[0]} грани вместе`;
-  return {label,text:`Не перехватывайте куб. Поверните <b>${what}</b> ${turnText(ft)}. <span class="explain">Апостроф в записи означает поворот против часовой стрелки, 2 — поворот на 180°. Направление всегда считается при взгляде прямо на указанную грань.</span>`,face,depth:width,dir:turnText(ft),wide:width};
- }
+  return {label,text:`Поверните <b>${what}</b> ${turnText(ft)}.`,face,depth:width,ft,wide:width};}
  const dPos=n-a,dNeg=b+1,usePos=dPos<=dNeg;face=usePos?posFace:negFace;let depth=usePos?dPos:dNeg;ft=usePos?t:-t;ft=((ft%4)+4)%4;
  let ord=['','первый','второй','третий','четвертый','пятый'][depth];
- return {label:raw,text:`Положение куба не меняйте. Поверните <b>только ${ord} слой от ${FACE_RU[face]} грани</b> ${turnText(ft)}. <span class="explain">Внешняя грань остается на месте — двигается только подсвеченный внутренний срез.</span>`,face,depth,dir:turnText(ft),inner:true};
+ return {label:raw,text:`Поверните <b>только ${ord} слой от ${FACE_RU[face]} грани</b> ${turnText(ft)}.`,face,depth,ft,inner:true};
 }
-function sliceViz(h){let html='';for(let i=1;i<=5;i++){let active=h.inner?i===h.depth:i<=Math.max(1,h.wide||1);html+=`<div style="width:42px;height:${28+i*6}px;border-radius:8px;border:1px solid #ffffff24;background:${active?'#f3f6fb':'#151b24'};box-shadow:${active?'0 0 18px #fff5':'none'}"><div style="font-size:10px;text-align:center;padding-top:7px;color:${active?'#080a0e':'#7e8797'}">${i}</div></div>`}return html}
-function algHint(i){
- const hs=[];for(let k=i;k<Math.min(solution.length,i+4);k++)hs.push(humanMove(moveSpecs[k],solution[k]).label);
- const q=hs.join(' ');if(q==='R U R\' U\''||q==='R U R\' U')return 'ПИФ-ПАФ';
- if(q==="R' U' R U")return 'ОБРАТНЫЙ ПИФ-ПАФ';return '';
+function stateBeforeStep(i){
+ if(!solveStartColors)return null;
+ try{const lab=new CubeLab(5);if(!lab.load_face_colors(solveStartColors))return null;
+  for(let k=0;k<i;k++){const m=moveSpecs[k];if(m)lab.apply_design_move(m.axis,m.layer,m.dir)}
+  return Array.from(lab.face_colors(5));
+ }catch{return null}
 }
-function renderSolution(r){$('#resultTitle').textContent=`Решение: ${solution.length} ходов`;$('#resultMeta').innerHTML='Зафиксируйте ориентацию и <b>не вращайте весь куб между ходами</b>: <span class="cword cw">БЕЛАЯ</span> сверху · <span class="cword cg">ЗЕЛЕНАЯ</span> к себе · <span class="cword cr">КРАСНАЯ</span> справа. Решение replay-проверено.';renderStep()}
-function renderStep(){if(!solution.length)return;step=Math.max(0,Math.min(step,solution.length-1));let h=humanMove(moveSpecs[step],solution[step]),hint=algHint(step);$('#bigmove').textContent=h.label;$('#moveInstruction').innerHTML=`<b>Шаг ${step+1} из ${solution.length}</b>${hint?` · <b>${hint}</b>`:''}<br>${h.text}<br><span class="explain">База: <span class="cword cw">БЕЛАЯ</span> ↑ · <span class="cword cg">ЗЕЛЕНАЯ</span> к вам · <span class="cword cr">КРАСНАЯ</span> справа.</span>`;$('#sliceViz').innerHTML=sliceViz(h);$('#steps').innerHTML=solution.map((m,i)=>`<div class="move ${i===step?'current':''}">${humanMove(moveSpecs[i],m).label}</div>`).join('');setTimeout(()=>document.querySelector('.move.current')?.scrollIntoView({behavior:'smooth',inline:'center',block:'nearest'}),0);$('#prevMove').disabled=step===0;$('#nextMove').textContent=step===solution.length-1?'ГОТОВО ✓':'ДАЛЬШЕ →'}
+function cube3D(h,state){
+ const C=['#f4f5f7','#f1cf26','#22b96b','#3478f6','#f18a2b','#e94450'];
+ const FI={U:0,D:1,F:2,B:3,L:4,R:5}; let active=h.face||'F';
+ const fallback={U:0,D:1,F:2,B:3,L:4,R:5};
+ function cells(face){const fi=FI[face],arr=state?state.slice(fi*25,fi*25+25):Array(25).fill(fallback[face]);
+  return arr.map((v,i)=>`<i data-i="${i}" style="background:${C[v]};${active===face?'filter:brightness(1.12)':''}"></i>`).join('')}
+ let arrow=h.ft===2?'↻ 180°':h.ft===3?'↺ 90°':'↻ 90°';
+ return `<style>
+ #c3wrap{position:absolute;inset:0;touch-action:none;user-select:none;overflow:hidden}
+ #c3{--rx:-24deg;--ry:34deg;width:176px;height:176px;position:absolute;left:50%;top:48%;transform-style:preserve-3d;transform:translate(-50%,-50%) rotateX(var(--rx)) rotateY(var(--ry));transition:transform .18s ease}
+ #c3 .fc{position:absolute;width:150px;height:150px;display:grid;grid-template-columns:repeat(5,1fr);gap:3px;padding:4px;background:#050608;border:1px solid #252b34;border-radius:8px;backface-visibility:visible;box-shadow:inset 0 0 18px #000}
+ #c3 i{display:block;border-radius:3px;box-shadow:inset 0 0 0 1px #0008,inset 0 1px 2px #fff4}
+ #c3 .active{outline:3px solid #fff9;box-shadow:0 0 28px #fff5,inset 0 0 18px #000}
+ .fF{transform:translateZ(75px)}.fB{transform:rotateY(180deg) translateZ(75px)}.fR{transform:rotateY(90deg) translateZ(75px)}.fL{transform:rotateY(-90deg) translateZ(75px)}.fU{transform:rotateX(90deg) translateZ(75px)}.fD{transform:rotateX(-90deg) translateZ(75px)}
+ #moveArrow{position:absolute;right:15px;top:13px;font-size:17px;font-weight:900;padding:8px 10px;border-radius:12px;background:#05070bcc;border:1px solid #ffffff22}
+ #dragHint{position:absolute;left:12px;top:13px;font-size:11px;color:#aeb7c6;background:#05070baa;padding:7px 9px;border-radius:10px}
+ </style><div id="c3wrap"><div id="c3">${['F','B','R','L','U','D'].map(f=>`<div class="fc f${f} ${active===f?'active':''}">${cells(f)}</div>`).join('')}</div><div id="dragHint">↔ проведите пальцем, чтобы осмотреть</div><div id="moveArrow">${h.label} · ${arrow}</div></div><div style="position:absolute;left:14px;bottom:10px;font-size:12px;color:#aeb7c6"><b>Реальное состояние:</b> белая ↑ · зеленая спереди · красная справа</div>`;
+}
+let orbitX=-24,orbitY=34;
+function enableCubeOrbit(){const wrap=$('#c3wrap'),cube=$('#c3');if(!wrap||!cube)return;let down=false,x=0,y=0;
+ const paint=()=>{cube.style.setProperty('--rx',orbitX+'deg');cube.style.setProperty('--ry',orbitY+'deg')};paint();
+ wrap.onpointerdown=e=>{down=true;x=e.clientX;y=e.clientY;wrap.setPointerCapture?.(e.pointerId)};
+ wrap.onpointermove=e=>{if(!down)return;orbitY+=(e.clientX-x)*.45;orbitX-=(e.clientY-y)*.35;orbitX=Math.max(-80,Math.min(80,orbitX));x=e.clientX;y=e.clientY;paint()};
+ wrap.onpointerup=wrap.onpointercancel=()=>down=false;
+}
+function algHint(i){const hs=[];for(let k=i;k<Math.min(solution.length,i+7);k++)hs.push(humanMove(moveSpecs[k],solution[k]).label);let q=hs.join(' ');if(q.startsWith("R U R' U'"))return ['ПИФ-ПАФ',4];if(q.startsWith("R' U' R U"))return ['ОБРАТНЫЙ ПИФ-ПАФ',4];if(q.startsWith("R U R' F R' F' R"))return ['ПЕРЕВОРОТ РЕБРА',7];return null}
+function phaseText(){return 'Reduction: центры → ребра → этап 3×3';}
+function renderSolution(r){$('#resultTitle').textContent=`Решение найдено`;$('#resultMeta').innerHTML=`${phaseText()}. Куб держим в одной системе координат: <span class="cword cw">БЕЛАЯ</span> сверху · <span class="cword cg">ЗЕЛЕНАЯ</span> спереди · <span class="cword cr">КРАСНАЯ</span> справа. Обозначения соответствуют стандартной NxN-нотации.`;renderStep()}
+function renderStep(){if(!solution.length)return;step=Math.max(0,Math.min(step,solution.length-1));let h=humanMove(moveSpecs[step],solution[step]),hint=algHint(step);const visualState=stateBeforeStep(step);$('#cube3d').innerHTML=cube3D(h,visualState);enableCubeOrbit();$('#bigmove').textContent=h.label;$('#moveInstruction').innerHTML=`<b>Ход ${step+1} из ${solution.length}</b>${hint?` · <b>${hint[0]}</b>`:''}<br>${h.text}<br><span class="explain">Не поворачивайте весь куб. На 3D-схеме подсвечена рабочая грань; направление считается при взгляде прямо на нее. Для внутренних срезов ориентируйтесь прежде всего на подсвеченный слой/стрелку, а не на слова «по часовой».</span>`;$('#sliceViz').innerHTML='';$('#steps').innerHTML=solution.map((m,i)=>`<div class="move ${i===step?'current':''}">${humanMove(moveSpecs[i],m).label}</div>`).join('');setTimeout(()=>document.querySelector('.move.current')?.scrollIntoView({behavior:'smooth',inline:'center',block:'nearest'}),0);$('#prevMove').disabled=step===0;$('#nextMove').textContent=step===solution.length-1?'ГОТОВО ✓':'ВЫПОЛНЕНО →'}
 $('#prevMove').onclick=()=>{step--;renderStep()};$('#nextMove').onclick=()=>{if(step<solution.length-1){step++;renderStep()}else show('home')};$('#newCube').onclick=()=>show('home');
-if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js?v=9').catch(()=>{});
+if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js?v=11').catch(()=>{});
 </script></body></html>

@@ -72,8 +72,8 @@ canvas{display:none}
 import init, { CubeLab } from './pkg/cube_wasm.js';
 
 const FACES=[
- {name:'UP',center:'WHITE',idx:0,hint:'White center facing camera. IMPORTANT: keep the GREEN face toward the floor. Do not twist the face in the frame.'},
- {name:'DOWN',center:'YELLOW',idx:1,hint:'Yellow center facing camera. IMPORTANT: keep the GREEN face toward the floor. If the preview is rotated, use ROTATE after capture.'},
+ {name:'UP',center:'WHITE',idx:0,hint:'White center facing camera. IMPORTANT: keep the GREEN face toward the BOTTOM of the screen.'},
+ {name:'DOWN',center:'YELLOW',idx:1,hint:'Yellow center facing camera. IMPORTANT: keep the GREEN face toward the TOP of the screen. This is opposite to the UP-face capture.'},
  {name:'FRONT',center:'GREEN',idx:2,hint:'Green center facing camera. Keep WHITE toward the ceiling.'},
  {name:'BACK',center:'BLUE',idx:3,hint:'Blue center facing camera. Keep WHITE toward the ceiling.'},
  {name:'LEFT',center:'ORANGE',idx:4,hint:'Orange center facing camera. Keep WHITE toward the ceiling.'},
@@ -133,6 +133,33 @@ $('#retake').onclick=()=>{raw[face]=null;classified[face]=null;manual[face]=Arra
 $('#accept').onclick=()=>{if(face<5){face++;guide();show('scan');camera()}else{finishCapture()}};
 function finishCapture(){stopCamera();provisional();show('verify');validate()}
 function counts(){let n=Array(6).fill(0);classified.flat().forEach(x=>n[x]++);return n}
+// Cube-Solver's exact sticker convention is Face::ALL = U,D,F,B,L,R, row-major.
+// A face photo can still be rotated in-plane. Before solving, enumerate those rotations
+// and reject combinations whose 8 physical corner color-triples cannot exist on a cube.
+const VALID_CORNERS=new Set(['025','024','015','014','235','234','135','134']);
+function rotN(a,n){let b=a.slice();for(let k=0;k<n;k++)b=rotate25(b,1);return b}
+function faceCoord(fi,r,c){const n=5,last=4;switch(fi){
+ case 0:return [c,last,r]; case 1:return [c,0,last-r]; case 2:return [c,last-r,last];
+ case 3:return [last-c,last-r,0]; case 4:return [0,last-r,c]; case 5:return [last,last-r,last-c];}}
+function cornerSignatureOk(faces){
+ const groups=new Map();
+ for(let fi=0;fi<6;fi++)for(const r of [0,4])for(const c of [0,4]){
+   const xyz=faceCoord(fi,r,c),key=xyz.join(','); if(!groups.has(key))groups.set(key,[]);groups.get(key).push(faces[fi][r*5+c]);
+ }
+ if(groups.size!==8)return false;const seen=new Set();
+ for(const colors of groups.values()){if(colors.length!==3)return false;const sig=colors.slice().sort((a,b)=>a-b).join('');if(!VALID_CORNERS.has(sig)||seen.has(sig))return false;seen.add(sig)}
+ return seen.size===8;
+}
+function orientationCandidates(){
+ const variants=classified.map(f=>[0,1,2,3].map(k=>rotN(f,k))),out=[];
+ // U rotation is kept at 0 first because the scan guide defines its green edge as screen-bottom.
+ // If the user ignored that guide, the fallback loop covers all U rotations too.
+ for(let a=0;a<4;a++)for(let b=0;b<4;b++)for(let c=0;c<4;c++)for(let d=0;d<4;d++)for(let e=0;e<4;e++)for(let f=0;f<4;f++){
+   const fs=[variants[0][a],variants[1][b],variants[2][c],variants[3][d],variants[4][e],variants[5][f]];
+   if(cornerSignatureOk(fs))out.push({rots:[a,b,c,d,e,f],colors:fs.flat()});
+ }
+ return out;
+}
 async function validate(){
  let n=counts(), countOK=n.every(x=>x===25), centers=classified.every((f,i)=>f&&f[12]===i);
  $('#verifyText').textContent=`${n.reduce((a,b)=>a+b,0)} / 150 stickers · ${n.join(' · ')}`;
@@ -141,30 +168,39 @@ async function validate(){
 }
 $('#editFaces').onclick=()=>{face=0;renderReview();show('review')};
 $('#solve').onclick=async()=>{
- show('working');$('#workStatus').textContent='Loading WASM solver…';
+ show('working');$('#workStatus').textContent='Loading verified 5×5 WASM solver…';
  try{
-   await init(); solverReady=true; $('#workStatus').textContent='Running deterministic 5×5 reduction…';
-   const colors=classified.flat(); const lab=new CubeLab(5);
-   if(!lab.load_face_colors(colors))throw Error('Sticker state failed cube validation. Recheck face orientation and colors.');
-   const worker=new Worker('./solver-worker.js',{type:'module'});
-   const jobId=Date.now();
-   worker.onmessage=e=>{
-    const d=e.data||{}; if(d.type==='ready'){worker.postMessage({type:'solve',jobId,n:5,depth:9,time:6000,colors});return}
-    if(d.type==='result'&&d.jobId===jobId){worker.terminate(); if(!d.ok) return fail(d.error); let r;try{r=JSON.parse(d.result)}catch{return fail('Invalid solver response')}
-      if(!r.found||!r.notation?.length)return fail('No verified solution. The color counts are valid, but one or more photographed faces are probably rotated or a sticker is misread. Open REVIEW FACES, compare all 150 stickers, and use ROTATE ↺/↻ on any face whose top edge does not match the guide. Manual color corrections are now preserved.');
-      // independent replay gate in the main thread
-      const replay=new CubeLab(5); if(!replay.load_face_colors(colors))return fail('Replay could not load state.');
-      (r.moves||[]).forEach(m=>replay.apply_design_move(m.axis,m.layer,m.dir));
-      if(!replay.is_solved())return fail('Independent replay verification failed.');
-      solution=r.notation;step=0;renderSolution(r);show('result');
-    }
+   await init(); solverReady=true;
+   const candidates=orientationCandidates();
+   if(!candidates.length)throw Error('The photographed corner stickers cannot form a physical 5×5 cube. Recheck the 8 corner stickers. The scan orientation itself is now tested automatically.');
+   $('#workStatus').textContent=`Orientation check: ${candidates.length} physically plausible candidate${candidates.length===1?'':'s'}. Solving…`;
+   let ci=0;
+   const tryNext=()=>{
+     if(ci>=candidates.length)return fail('No replay-verified solution for any physically plausible face orientation. Face rotation has already been corrected automatically, so at least one sticker color is wrong. Review the scan, especially corners and edge stickers.');
+     const cand=candidates[ci++], colors=cand.colors;
+     const pre=new CubeLab(5); if(!pre.load_face_colors(colors))return tryNext();
+     $('#workStatus').textContent=`Trying verified orientation ${ci}/${candidates.length}…`;
+     const worker=new Worker('./solver-worker.js',{type:'module'});const jobId=Date.now()+ci;
+     let timer=setTimeout(()=>{worker.terminate();tryNext()},32000);
+     worker.onmessage=e=>{
+       const d=e.data||{};
+       if(d.type==='ready'){worker.postMessage({type:'solve',jobId,n:5,depth:9,time:6000,colors});return}
+       if(d.type==='result'&&d.jobId===jobId){clearTimeout(timer);worker.terminate();if(!d.ok)return tryNext();let r;try{r=JSON.parse(d.result)}catch{return tryNext()}
+         if(!r.found||!r.notation?.length)return tryNext();
+         const replay=new CubeLab(5);if(!replay.load_face_colors(colors))return tryNext();(r.moves||[]).forEach(m=>replay.apply_design_move(m.axis,m.layer,m.dir));if(!replay.is_solved())return tryNext();
+         // Adopt the orientation that actually solved/replay-verified.
+         cand.rots.forEach((k,fi)=>{if(k){raw[fi]=raw[fi]?rotN(raw[fi],k):raw[fi];manual[fi]=rotN(manual[fi],k);classified[fi]=rotN(classified[fi],k)}});
+         solution=r.notation;step=0;renderSolution(r);$('#resultMeta').textContent=`Deterministic reduction · replay verified · face orientation auto-corrected (${cand.rots.join('/')})`;show('result');
+       }
+     };
+     worker.onerror=()=>{clearTimeout(timer);worker.terminate();tryNext()};
    };
-   worker.onerror=()=>fail('Solver worker failed to load. Check that GitHub Pages finished building the WASM package.');
+   tryNext();
  }catch(e){fail(e.message||String(e))}
 };
 function fail(m){show('verify');$('#validation').textContent='Solver: '+m}
 function renderSolution(r){$('#resultTitle').textContent=`${solution.length} moves`;$('#resultMeta').textContent='Deterministic reduction · independently replay verified';renderStep()}
 function renderStep(){if(!solution.length)return;step=Math.max(0,Math.min(step,solution.length-1));$('#bigmove').textContent=solution[step];$('#steps').innerHTML=solution.map((m,i)=>`<div class="move ${i===step?'current':''}">${m}</div>`).join('');setTimeout(()=>document.querySelector('.move.current')?.scrollIntoView({behavior:'smooth',inline:'center',block:'nearest'}),0);$('#prevMove').disabled=step===0;$('#nextMove').textContent=step===solution.length-1?'DONE ✓':'NEXT →'}
 $('#prevMove').onclick=()=>{step--;renderStep()};$('#nextMove').onclick=()=>{if(step<solution.length-1){step++;renderStep()}else show('home')};$('#newCube').onclick=()=>show('home');
-if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').catch(()=>{});
+if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js?v=3').catch(()=>{});
 </script></body></html>

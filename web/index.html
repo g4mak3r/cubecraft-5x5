@@ -44,6 +44,7 @@ canvas{display:none}
  <div class="guide"><h2 id="reviewTitle">Check face</h2><p>Tap any sticker to correct it.</p></div>
  <div class="card"><div class="facegrid" id="facegrid"></div></div>
  <div class="palette" id="palette"></div>
+ <div class="row"><button class="secondary" id="rotL">↺ ROTATE</button><button class="secondary" id="rotR">ROTATE ↻</button></div>
  <div class="row"><button class="secondary" id="retake">RETAKE</button><button class="primary" id="accept">USE FACE</button></div>
 </section>
 
@@ -71,15 +72,15 @@ canvas{display:none}
 import init, { CubeLab } from './pkg/cube_wasm.js';
 
 const FACES=[
- {name:'UP',center:'WHITE',idx:0,hint:'White center facing camera. Keep FRONT (green) toward the floor.'},
- {name:'DOWN',center:'YELLOW',idx:1,hint:'Yellow center facing camera. Keep FRONT (green) toward the floor.'},
- {name:'FRONT',center:'GREEN',idx:2,hint:'Green center facing camera. Keep UP (white) toward the ceiling.'},
- {name:'BACK',center:'BLUE',idx:3,hint:'Blue center facing camera. Keep UP (white) toward the ceiling.'},
- {name:'LEFT',center:'ORANGE',idx:4,hint:'Orange center facing camera. Keep UP (white) toward the ceiling.'},
- {name:'RIGHT',center:'RED',idx:5,hint:'Red center facing camera. Keep UP (white) toward the ceiling.'}
+ {name:'UP',center:'WHITE',idx:0,hint:'White center facing camera. IMPORTANT: keep the GREEN face toward the floor. Do not twist the face in the frame.'},
+ {name:'DOWN',center:'YELLOW',idx:1,hint:'Yellow center facing camera. IMPORTANT: keep the GREEN face toward the floor. If the preview is rotated, use ROTATE after capture.'},
+ {name:'FRONT',center:'GREEN',idx:2,hint:'Green center facing camera. Keep WHITE toward the ceiling.'},
+ {name:'BACK',center:'BLUE',idx:3,hint:'Blue center facing camera. Keep WHITE toward the ceiling.'},
+ {name:'LEFT',center:'ORANGE',idx:4,hint:'Orange center facing camera. Keep WHITE toward the ceiling.'},
+ {name:'RIGHT',center:'RED',idx:5,hint:'Red center facing camera. Keep WHITE toward the ceiling.'}
 ];
 const CSS=['#f4f4f1','#f3d638','#28a35d','#3373d6','#f28a2c','#d53b45'];
-let face=0, raw=Array(6).fill(null), classified=Array(6).fill(null), selectedColor=0, stream=null, solution=[], step=0, solverReady=false;
+let face=0, raw=Array(6).fill(null), classified=Array(6).fill(null), manual=Array.from({length:6},()=>Array(25).fill(null)), selectedColor=0, stream=null, solution=[], step=0, solverReady=false;
 const $=s=>document.querySelector(s), screens=[...document.querySelectorAll('.screen')];
 function show(id){screens.forEach(x=>x.classList.toggle('active',x.id===id));}
 for(let i=0;i<25;i++) $('#overlay').append(document.createElement('i'));
@@ -90,7 +91,7 @@ async function camera(){
  catch(e){alert('Camera permission is required. Open this page over HTTPS and allow Camera.');show('home');}
 }
 function stopCamera(){if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}}
-$('#start').onclick=()=>{face=0;raw=Array(6).fill(null);classified=Array(6).fill(null);guide();show('scan');camera()};
+$('#start').onclick=()=>{face=0;raw=Array(6).fill(null);classified=Array(6).fill(null);manual=Array.from({length:6},()=>Array(25).fill(null));guide();show('scan');camera()};
 $('#cancelScan').onclick=()=>{stopCamera();show('home')};
 $('#capture').onclick=()=>{
  const v=$('#video'),c=$('#sample'),x=c.getContext('2d'); if(!v.videoWidth)return;
@@ -107,16 +108,28 @@ function rgbLab(rgb){let [r,g,b]=rgb.map(v=>v/255).map(v=>v<=.04045?v/12.92:Math
 function dist(a,b){return Math.hypot(a[0]-b[0],a[1]-b[1],a[2]-b[2])}
 function provisional(){
  let refs=raw.map((f,i)=>f?rgbLab(f[12]):rgbLab([[245,245,240],[244,214,66],[38,155,86],[37,92,191],[235,126,39],[204,44,56]][i]));
- raw.forEach((f,fi)=>{if(f)classified[fi]=f.map(rgb=>{let l=rgbLab(rgb),best=0,bd=1e9;refs.forEach((q,i)=>{let d=dist(l,q);if(d<bd){bd=d;best=i}});return best})});
+ raw.forEach((f,fi)=>{if(f){
+   const auto=f.map(rgb=>{let l=rgbLab(rgb),best=0,bd=1e9;refs.forEach((q,i)=>{let d=dist(l,q);if(d<bd){bd=d;best=i}});return best});
+   classified[fi]=auto.map((c,i)=>manual[fi][i]===null?c:manual[fi][i]);
+   classified[fi][12]=fi; // odd-cube centers are fixed and define the color frame
+ }});
+}
+function rotate25(a,dir=1){const b=Array(25);for(let r=0;r<5;r++)for(let c=0;c<5;c++){const ni=dir>0?c*5+(4-r):(4-c)*5+r;b[ni]=a[r*5+c]}return b}
+function rotateCurrent(dir){
+ if(raw[face]) raw[face]=rotate25(raw[face],dir);
+ manual[face]=rotate25(manual[face],dir);
+ if(classified[face]) classified[face]=rotate25(classified[face],dir);
+ renderReview();
 }
 function renderReview(){
  provisional(); let f=FACES[face];$('#reviewTitle').textContent=`${f.name} FACE`;
  $('#facegrid').innerHTML=classified[face].map((c,i)=>`<button class="sticker ${i===12?'center':''}" data-i="${i}" style="background:${CSS[c]}"></button>`).join('');
  $('#palette').innerHTML=CSS.map((c,i)=>`<button class="swatch" data-c="${i}" style="background:${c};${selectedColor===i?'outline:3px solid white;outline-offset:2px':''}"></button>`).join('');
  document.querySelectorAll('.swatch').forEach(b=>b.onclick=()=>{selectedColor=+b.dataset.c;renderReview()});
- document.querySelectorAll('.sticker').forEach(b=>b.onclick=()=>{classified[face][+b.dataset.i]=selectedColor;b.style.background=CSS[selectedColor]});
+ document.querySelectorAll('.sticker').forEach(b=>b.onclick=()=>{const i=+b.dataset.i;if(i===12)return;manual[face][i]=selectedColor;classified[face][i]=selectedColor;b.style.background=CSS[selectedColor]});
 }
-$('#retake').onclick=()=>{raw[face]=null;classified[face]=null;guide();show('scan');camera()};
+$('#rotL').onclick=()=>rotateCurrent(-1);$('#rotR').onclick=()=>rotateCurrent(1);
+$('#retake').onclick=()=>{raw[face]=null;classified[face]=null;manual[face]=Array(25).fill(null);guide();show('scan');camera()};
 $('#accept').onclick=()=>{if(face<5){face++;guide();show('scan');camera()}else{finishCapture()}};
 function finishCapture(){stopCamera();provisional();show('verify');validate()}
 function counts(){let n=Array(6).fill(0);classified.flat().forEach(x=>n[x]++);return n}
@@ -138,7 +151,7 @@ $('#solve').onclick=async()=>{
    worker.onmessage=e=>{
     const d=e.data||{}; if(d.type==='ready'){worker.postMessage({type:'solve',jobId,n:5,depth:9,time:6000,colors});return}
     if(d.type==='result'&&d.jobId===jobId){worker.terminate(); if(!d.ok) return fail(d.error); let r;try{r=JSON.parse(d.result)}catch{return fail('Invalid solver response')}
-      if(!r.found||!r.notation?.length)return fail('No verified solution was found.');
+      if(!r.found||!r.notation?.length)return fail('No verified solution. The color counts are valid, but one or more photographed faces are probably rotated or a sticker is misread. Open REVIEW FACES, compare all 150 stickers, and use ROTATE ↺/↻ on any face whose top edge does not match the guide. Manual color corrections are now preserved.');
       // independent replay gate in the main thread
       const replay=new CubeLab(5); if(!replay.load_face_colors(colors))return fail('Replay could not load state.');
       (r.moves||[]).forEach(m=>replay.apply_design_move(m.axis,m.layer,m.dir));

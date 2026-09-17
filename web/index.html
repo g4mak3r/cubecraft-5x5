@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#07090d"><link rel="manifest" href="./manifest.webmanifest">
+<title>CUBECRAFT 5×5</title>
+<style>
+:root{color-scheme:dark;--bg:#07090d;--card:rgba(23,27,35,.78);--line:rgba(255,255,255,.10);--muted:#8d96a8;--fg:#f6f7fb;--accent:#dbe7ff}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 50% -10%,#202a3a 0,#0c1017 35%,var(--bg) 72%);color:var(--fg);font:15px/1.35 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;min-height:100dvh}
+button{font:inherit;color:inherit}.app{max-width:540px;margin:auto;min-height:100dvh;padding:calc(env(safe-area-inset-top) + 18px) 18px calc(env(safe-area-inset-bottom) + 22px);display:flex;flex-direction:column;gap:14px}
+.brand{display:flex;align-items:center;justify-content:space-between}.brand b{font-size:22px;letter-spacing:-.04em}.pill{font-size:11px;color:#aeb7c7;border:1px solid var(--line);border-radius:999px;padding:7px 10px;background:#ffffff08}
+.card{background:var(--card);border:1px solid var(--line);border-radius:26px;box-shadow:0 22px 70px #0008;backdrop-filter:blur(20px);overflow:hidden}.hero{padding:22px}.hero h1{font-size:34px;line-height:1.02;letter-spacing:-.055em;margin:4px 0 10px}.hero p{color:var(--muted);margin:0}
+.primary,.secondary{width:100%;border:0;border-radius:18px;padding:17px 18px;font-weight:750;cursor:pointer}.primary{background:#f5f7fb;color:#080a0e}.secondary{background:#171c25;border:1px solid var(--line)}.primary:disabled{opacity:.35}
+.screen{display:none}.screen.active{display:flex;flex-direction:column;gap:14px;flex:1}.camera{position:relative;aspect-ratio:1/1;border-radius:28px;overflow:hidden;background:#111722;border:1px solid var(--line)}video{width:100%;height:100%;object-fit:cover}.shade{position:absolute;inset:0;background:linear-gradient(#0002,#0000 25%,#0000 75%,#0004);pointer-events:none}
+.gridOverlay{position:absolute;inset:12%;display:grid;grid-template-columns:repeat(5,1fr);grid-template-rows:repeat(5,1fr);border:2px solid #fff;border-radius:14px;box-shadow:0 0 0 999px #0005}.gridOverlay i{border:1px solid #ffffff66}
+.guide{text-align:center}.guide h2{font-size:26px;margin:0 0 5px;letter-spacing:-.04em}.guide p{margin:0;color:var(--muted)}
+.progress{display:grid;grid-template-columns:repeat(6,1fr);gap:7px}.dot{height:5px;background:#ffffff18;border-radius:9px}.dot.done,.dot.now{background:#e9eef8}.dot.now{box-shadow:0 0 12px #fff8}
+.facegrid{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;padding:18px}.sticker{aspect-ratio:1;border:0;border-radius:12px;box-shadow:inset 0 0 0 1px #0003,0 4px 12px #0003}.sticker.center{outline:2px solid #fff;outline-offset:2px}
+.row{display:flex;gap:10px}.row>*{flex:1}.small{font-size:12px;color:var(--muted)}.status{padding:14px 16px;border-radius:18px;background:#10151d;border:1px solid var(--line);color:#cbd2df}
+.palette{display:flex;justify-content:center;gap:9px;flex-wrap:wrap}.swatch{width:40px;height:40px;border-radius:50%;border:2px solid #ffffff44}
+.steps{display:flex;gap:8px;overflow:auto;padding:4px 1px 10px}.move{min-width:62px;padding:14px 12px;text-align:center;border-radius:16px;background:#121821;border:1px solid var(--line);font-weight:800;font-size:18px}.move.current{background:#f3f6fb;color:#090b0f}.bigmove{text-align:center;font-size:64px;font-weight:850;letter-spacing:-.06em;padding:22px 0}.meta{text-align:center;color:var(--muted)}
+.spinner{width:44px;height:44px;border:4px solid #ffffff1d;border-top-color:#fff;border-radius:50%;animation:spin .8s linear infinite;margin:30px auto}@keyframes spin{to{transform:rotate(360deg)}}
+canvas{display:none}
+</style>
+</head>
+<body><main class="app">
+<div class="brand"><b>CUBECRAFT</b><span class="pill">5×5 · WASM</span></div>
+
+<section id="home" class="screen active">
+ <div class="card hero"><div class="pill" style="display:inline-block">CAMERA + LOCAL SOLVER</div><h1>Solve a 5×5<br>from your camera.</h1><p>Six faces. 150 stickers. The solve runs locally on your device and is replay-verified before you see it.</p></div>
+ <div class="status">For best recognition use even light and keep the cube inside the square. You can correct every sticker before solving.</div>
+ <button class="primary" id="start">SCAN CUBE</button>
+</section>
+
+<section id="scan" class="screen">
+ <div class="progress" id="progress"></div>
+ <div class="guide"><h2 id="faceTitle">UP · WHITE CENTER</h2><p id="faceHint"></p></div>
+ <div class="camera"><video id="video" playsinline autoplay muted></video><div class="shade"></div><div class="gridOverlay" id="overlay"></div></div>
+ <button class="primary" id="capture">CAPTURE FACE</button>
+ <button class="secondary" id="cancelScan">CANCEL</button>
+</section>
+
+<section id="review" class="screen">
+ <div class="guide"><h2 id="reviewTitle">Check face</h2><p>Tap any sticker to correct it.</p></div>
+ <div class="card"><div class="facegrid" id="facegrid"></div></div>
+ <div class="palette" id="palette"></div>
+ <div class="row"><button class="secondary" id="retake">RETAKE</button><button class="primary" id="accept">USE FACE</button></div>
+</section>
+
+<section id="verify" class="screen">
+ <div class="card hero"><h1>Cube captured.</h1><p id="verifyText">150 / 150 stickers</p></div>
+ <div class="status" id="validation">Calibrating colors from the six fixed centers…</div>
+ <button class="primary" id="solve" disabled>SOLVE 5×5</button>
+ <button class="secondary" id="editFaces">REVIEW FACES</button>
+</section>
+
+<section id="working" class="screen">
+ <div class="card hero" style="text-align:center"><div class="spinner"></div><h1 style="font-size:28px">Solving on device…</h1><p>Centers → edge pairing → 3×3 reduction → replay verification.</p></div>
+ <div class="status" id="workStatus">Loading solver…</div>
+</section>
+
+<section id="result" class="screen">
+ <div class="card hero"><div class="pill" style="display:inline-block">REPLAY VERIFIED ✓</div><h1 id="resultTitle">Solution ready</h1><p id="resultMeta"></p></div>
+ <div class="bigmove" id="bigmove">R</div><div class="steps" id="steps"></div>
+ <div class="row"><button class="secondary" id="prevMove">← PREV</button><button class="primary" id="nextMove">NEXT →</button></div>
+ <button class="secondary" id="newCube">SCAN ANOTHER CUBE</button>
+</section>
+<canvas id="sample" width="500" height="500"></canvas>
+</main>
+<script type="module">
+import init, { CubeLab } from './pkg/cube_wasm.js';
+
+const FACES=[
+ {name:'UP',center:'WHITE',idx:0,hint:'White center facing camera. Keep FRONT (green) toward the floor.'},
+ {name:'DOWN',center:'YELLOW',idx:1,hint:'Yellow center facing camera. Keep FRONT (green) toward the floor.'},
+ {name:'FRONT',center:'GREEN',idx:2,hint:'Green center facing camera. Keep UP (white) toward the ceiling.'},
+ {name:'BACK',center:'BLUE',idx:3,hint:'Blue center facing camera. Keep UP (white) toward the ceiling.'},
+ {name:'LEFT',center:'ORANGE',idx:4,hint:'Orange center facing camera. Keep UP (white) toward the ceiling.'},
+ {name:'RIGHT',center:'RED',idx:5,hint:'Red center facing camera. Keep UP (white) toward the ceiling.'}
+];
+const CSS=['#f4f4f1','#f3d638','#28a35d','#3373d6','#f28a2c','#d53b45'];
+let face=0, raw=Array(6).fill(null), classified=Array(6).fill(null), selectedColor=0, stream=null, solution=[], step=0, solverReady=false;
+const $=s=>document.querySelector(s), screens=[...document.querySelectorAll('.screen')];
+function show(id){screens.forEach(x=>x.classList.toggle('active',x.id===id));}
+for(let i=0;i<25;i++) $('#overlay').append(document.createElement('i'));
+function progress(){ $('#progress').innerHTML=FACES.map((_,i)=>`<i class="dot ${raw[i]?'done':''} ${i===face?'now':''}"></i>`).join('');}
+function guide(){let f=FACES[face];$('#faceTitle').textContent=`${f.name} · ${f.center} CENTER`;$('#faceHint').textContent=f.hint;progress();}
+async function camera(){
+ try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:1280}},audio:false});$('#video').srcObject=stream;}
+ catch(e){alert('Camera permission is required. Open this page over HTTPS and allow Camera.');show('home');}
+}
+function stopCamera(){if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}}
+$('#start').onclick=()=>{face=0;raw=Array(6).fill(null);classified=Array(6).fill(null);guide();show('scan');camera()};
+$('#cancelScan').onclick=()=>{stopCamera();show('home')};
+$('#capture').onclick=()=>{
+ const v=$('#video'),c=$('#sample'),x=c.getContext('2d'); if(!v.videoWidth)return;
+ const side=Math.min(v.videoWidth,v.videoHeight),sx=(v.videoWidth-side)/2,sy=(v.videoHeight-side)/2;
+ x.drawImage(v,sx,sy,side,side,0,0,500,500);
+ let cells=[]; const margin=60, area=380, cell=area/5;
+ for(let r=0;r<5;r++)for(let col=0;col<5;col++){
+   let cx=margin+(col+.5)*cell,cy=margin+(r+.5)*cell,rad=10,d=x.getImageData(cx-rad,cy-rad,rad*2,rad*2).data;
+   let rr=0,gg=0,bb=0,n=0;for(let k=0;k<d.length;k+=4){rr+=d[k];gg+=d[k+1];bb+=d[k+2];n++} cells.push([rr/n,gg/n,bb/n]);
+ }
+ raw[face]=cells; provisional(); stopCamera(); renderReview(); show('review');
+};
+function rgbLab(rgb){let [r,g,b]=rgb.map(v=>v/255).map(v=>v<=.04045?v/12.92:Math.pow((v+.055)/1.055,2.4));let x=(r*.4124+g*.3576+b*.1805)/.95047,y=(r*.2126+g*.7152+b*.0722),z=(r*.0193+g*.1192+b*.9505)/1.08883;let f=v=>v>.008856?Math.cbrt(v):7.787*v+16/116;return [116*f(y)-16,500*(f(x)-f(y)),200*(f(y)-f(z))]}
+function dist(a,b){return Math.hypot(a[0]-b[0],a[1]-b[1],a[2]-b[2])}
+function provisional(){
+ let refs=raw.map((f,i)=>f?rgbLab(f[12]):rgbLab([[245,245,240],[244,214,66],[38,155,86],[37,92,191],[235,126,39],[204,44,56]][i]));
+ raw.forEach((f,fi)=>{if(f)classified[fi]=f.map(rgb=>{let l=rgbLab(rgb),best=0,bd=1e9;refs.forEach((q,i)=>{let d=dist(l,q);if(d<bd){bd=d;best=i}});return best})});
+}
+function renderReview(){
+ provisional(); let f=FACES[face];$('#reviewTitle').textContent=`${f.name} FACE`;
+ $('#facegrid').innerHTML=classified[face].map((c,i)=>`<button class="sticker ${i===12?'center':''}" data-i="${i}" style="background:${CSS[c]}"></button>`).join('');
+ $('#palette').innerHTML=CSS.map((c,i)=>`<button class="swatch" data-c="${i}" style="background:${c};${selectedColor===i?'outline:3px solid white;outline-offset:2px':''}"></button>`).join('');
+ document.querySelectorAll('.swatch').forEach(b=>b.onclick=()=>{selectedColor=+b.dataset.c;renderReview()});
+ document.querySelectorAll('.sticker').forEach(b=>b.onclick=()=>{classified[face][+b.dataset.i]=selectedColor;b.style.background=CSS[selectedColor]});
+}
+$('#retake').onclick=()=>{raw[face]=null;classified[face]=null;guide();show('scan');camera()};
+$('#accept').onclick=()=>{if(face<5){face++;guide();show('scan');camera()}else{finishCapture()}};
+function finishCapture(){stopCamera();provisional();show('verify');validate()}
+function counts(){let n=Array(6).fill(0);classified.flat().forEach(x=>n[x]++);return n}
+async function validate(){
+ let n=counts(), countOK=n.every(x=>x===25), centers=classified.every((f,i)=>f&&f[12]===i);
+ $('#verifyText').textContent=`${n.reduce((a,b)=>a+b,0)} / 150 stickers · ${n.join(' · ')}`;
+ let msg=countOK&&centers?'Color counts and all six fixed centers are valid. Ready for the replay-verified solver.':`Needs correction. Counts must be 25 each and centers must match the guided faces.`;
+ $('#validation').textContent=msg;$('#solve').disabled=!(countOK&&centers);
+}
+$('#editFaces').onclick=()=>{face=0;renderReview();show('review')};
+$('#solve').onclick=async()=>{
+ show('working');$('#workStatus').textContent='Loading WASM solver…';
+ try{
+   await init(); solverReady=true; $('#workStatus').textContent='Running deterministic 5×5 reduction…';
+   const colors=classified.flat(); const lab=new CubeLab(5);
+   if(!lab.load_face_colors(colors))throw Error('Sticker state failed cube validation. Recheck face orientation and colors.');
+   const worker=new Worker('./solver-worker.js',{type:'module'});
+   const jobId=Date.now();
+   worker.onmessage=e=>{
+    const d=e.data||{}; if(d.type==='ready'){worker.postMessage({type:'solve',jobId,n:5,depth:9,time:6000,colors});return}
+    if(d.type==='result'&&d.jobId===jobId){worker.terminate(); if(!d.ok) return fail(d.error); let r;try{r=JSON.parse(d.result)}catch{return fail('Invalid solver response')}
+      if(!r.found||!r.notation?.length)return fail('No verified solution was found.');
+      // independent replay gate in the main thread
+      const replay=new CubeLab(5); if(!replay.load_face_colors(colors))return fail('Replay could not load state.');
+      (r.moves||[]).forEach(m=>replay.apply_design_move(m.axis,m.layer,m.dir));
+      if(!replay.is_solved())return fail('Independent replay verification failed.');
+      solution=r.notation;step=0;renderSolution(r);show('result');
+    }
+   };
+   worker.onerror=()=>fail('Solver worker failed to load. Check that GitHub Pages finished building the WASM package.');
+ }catch(e){fail(e.message||String(e))}
+};
+function fail(m){show('verify');$('#validation').textContent='Solver: '+m}
+function renderSolution(r){$('#resultTitle').textContent=`${solution.length} moves`;$('#resultMeta').textContent='Deterministic reduction · independently replay verified';renderStep()}
+function renderStep(){if(!solution.length)return;step=Math.max(0,Math.min(step,solution.length-1));$('#bigmove').textContent=solution[step];$('#steps').innerHTML=solution.map((m,i)=>`<div class="move ${i===step?'current':''}">${m}</div>`).join('');setTimeout(()=>document.querySelector('.move.current')?.scrollIntoView({behavior:'smooth',inline:'center',block:'nearest'}),0);$('#prevMove').disabled=step===0;$('#nextMove').textContent=step===solution.length-1?'DONE ✓':'NEXT →'}
+$('#prevMove').onclick=()=>{step--;renderStep()};$('#nextMove').onclick=()=>{if(step<solution.length-1){step++;renderStep()}else show('home')};$('#newCube').onclick=()=>show('home');
+if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').catch(()=>{});
+</script></body></html>

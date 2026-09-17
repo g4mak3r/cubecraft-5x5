@@ -24,7 +24,7 @@ canvas{display:none}
 </style>
 </head>
 <body><main class="app">
-<div class="brand"><b>CUBECRAFT</b><span class="pill">5×5 · WASM · v11</span></div>
+<div class="brand"><b>CUBECRAFT</b><span class="pill">5×5 · WASM · v14 ADAPTIVE</span></div>
 
 <section id="home" class="screen active">
  <div class="card hero"><div class="pill" style="display:inline-block">CAMERA + LOCAL SOLVER</div><h1>Solve a 5×5<br>from your camera.</h1><p>Six faces. 150 stickers. The solve runs locally on your device and is replay-verified before you see it.</p></div>
@@ -51,7 +51,8 @@ canvas{display:none}
 <section id="verify" class="screen">
  <div class="card hero"><h1>Cube captured.</h1><p id="verifyText">150 / 150 stickers</p></div>
  <div class="status" id="validation">Calibrating colors from the six fixed centers…</div>
- <button class="primary" id="solve" disabled>SOLVE 5×5</button>
+ <div class="card" style="margin:12px 0"><b>Режим решения</b><div class="row" style="margin-top:10px"><button class="secondary modeBtn" data-mode="auto">АВТО</button><button class="secondary modeBtn" data-mode="guide">УЧЕБНЫЙ</button><button class="secondary modeBtn" data-mode="raw">МАШИННЫЙ</button></div><p class="explain" id="modeHelp">АВТО: проверяем несколько replay-verified вариантов и выбираем самый короткий найденный.</p></div>
+  <button class="primary" id="solve" disabled>SOLVE 5×5</button>
  <button class="secondary" id="editFaces">REVIEW FACES</button>
 </section>
 
@@ -80,7 +81,7 @@ const FACES=[
  {name:'ПРАВО',center:'КРАСНЫЙ',idx:5,hint:'КРАСНАЯ центральная наклейка смотрит в камеру. БЕЛАЯ грань должна быть СВЕРХУ.'}
 ];
 const CSS=['#f4f4f1','#f3d638','#28a35d','#3373d6','#f28a2c','#d53b45'];
-let face=0, raw=Array(6).fill(null), classified=Array(6).fill(null), manual=Array.from({length:6},()=>Array(25).fill(null)), selectedColor=0, stream=null, solution=[], moveSpecs=[], step=0, solverReady=false, solveStartColors=null;
+let face=0, raw=Array(6).fill(null), classified=Array(6).fill(null), manual=Array.from({length:6},()=>Array(25).fill(null)), selectedColor=0, stream=null, solution=[], moveSpecs=[], step=0, solverReady=false, solveStartColors=null, guideMode='auto', phaseAt=[], adaptiveBlocks=[];
 const $=s=>document.querySelector(s), screens=[...document.querySelectorAll('.screen')];
 function show(id){screens.forEach(x=>x.classList.toggle('active',x.id===id));}
 for(let i=0;i<25;i++) $('#overlay').append(document.createElement('i'));
@@ -265,6 +266,8 @@ function solveCandidate(colors,serial,total){return new Promise(async(resolve,re
  }catch(e){reject(e)}
 })}
 
+document.querySelectorAll('.modeBtn').forEach(b=>b.onclick=()=>{guideMode=b.dataset.mode;document.querySelectorAll('.modeBtn').forEach(x=>x.style.outline='');b.style.outline='2px solid #fff';const t={auto:'АВТО: новый Rust solver гоняет COMPACT и RELIABLE reduction; из replay-verified решений выбирается более короткое. Геометрические варианты камеры тоже проверяются.',guide:'УЧЕБНЫЙ: тот же проверенный путь, но точные знакомые последовательности объединяются в алгоритмические блоки. Никаких выдуманных сокращений.',raw:'МАШИННЫЙ: первый replay-verified путь без попытки выбрать более короткий вариант.'};$('#modeHelp').textContent=t[guideMode]});
+document.querySelector('.modeBtn[data-mode="auto"]')?.click();
 $('#solve').onclick=async()=>{
  show('working');$('#workStatus').textContent='Loading verified 5×5 WASM solver…';
  try{
@@ -275,11 +278,14 @@ $('#solve').onclick=async()=>{
   const candidates=orientationCandidates(base);
   if(!candidates.length)throw Error('No physical orientation matches the photographed stickers. At least one corner/edge color is misread; face rotation is already handled automatically.');
   $('#workStatus').textContent=`Found ${candidates.length} physical orientation${candidates.length===1?'':'s'}. Verifying with Cube-Solver…`;
-  let win=null;
-  for(let i=0;i<candidates.length&&!win;i++)win=await solveCandidate(candidates[i].colors,i+1,candidates.length);
-  if(!win)throw Error(`Geometry was resolved (${candidates.length} candidate${candidates.length===1?'':'s'}), but Cube-Solver found no replay-verified solution. This now points to a sticker color error, not face orientation.`);
+  let wins=[];
+  const cap=guideMode==='raw'?1:Math.min(candidates.length,4);
+  for(let i=0;i<cap;i++){const w=await solveCandidate(candidates[i].colors,i+1,cap);if(w)wins.push(w);}
+  if(!wins.length)throw Error(`Geometry was resolved (${candidates.length} candidate${candidates.length===1?'':'s'}), but Cube-Solver found no replay-verified solution. This now points to a sticker color error, not face orientation.`);
+  wins.sort((a,b)=>(a.r.notation?.length||1e9)-(b.r.notation?.length||1e9));
+  let win=wins[0];
   solution=win.r.notation||[];moveSpecs=win.r.moveSpecs||[];solveStartColors=win.colors.slice();step=0;renderSolution(win.r);
-  $('#resultMeta').textContent='Auto-oriented U/D/F/B/L/R geometry · Cube-Solver reduction · replay verified';show('result');
+  $('#resultMeta').textContent=`${win.r.reductionLane||win.r.winner||'reduction'} · ${solution.length} физических ходов · replay verified · Auto-oriented U/D/F/B/L/R`;show('result');
  }catch(e){fail(e.message||String(e))}
 };
 function fail(m){show('verify');$('#validation').textContent='Solver: '+m}
@@ -297,30 +303,44 @@ function humanMove(spec,raw){
  let ord=['','первый','второй','третий','четвертый','пятый'][depth];
  return {label:raw,text:`Поверните <b>только ${ord} слой от ${FACE_RU[face]} грани</b> ${turnText(ft)}.`,face,depth,ft,inner:true};
 }
+function applySpec(lab,m){
+ if(!m)return;
+ let q=((m.turns%4)+4)%4, count=q===2?2:(q===0?0:1), dir=q===3?-1:1;
+ for(let layer=m.start;layer<=m.end;layer++)for(let z=0;z<count;z++)lab.apply_design_move(m.axis,layer,dir);
+}
 function stateBeforeStep(i){
  if(!solveStartColors)return null;
  try{const lab=new CubeLab(5);if(!lab.load_face_colors(solveStartColors))return null;
-  for(let k=0;k<i;k++){const m=moveSpecs[k];if(m)lab.apply_design_move(m.axis,m.layer,m.dir)}
+  for(let k=0;k<i;k++)applySpec(lab,moveSpecs[k]);
   return Array.from(lab.face_colors(5));
  }catch{return null}
 }
-function cube3D(h,state){
+function coordFor(face,row,col){const n=5;switch(face){
+ case'U':return[col,n-1,row];case'D':return[col,0,n-1-row];case'F':return[col,n-1-row,n-1];
+ case'B':return[n-1-col,n-1-row,0];case'L':return[0,n-1-row,col];case'R':return[n-1,n-1-row,n-1-col];}}
+function stickerInMovingSlice(face,i,spec){if(!spec)return false;let c=coordFor(face,Math.floor(i/5),i%5);return c[spec.axis]>=spec.start&&c[spec.axis]<=spec.end}
+function cube3D(h,state,spec){
  const C=['#f4f5f7','#f1cf26','#22b96b','#3478f6','#f18a2b','#e94450'];
  const FI={U:0,D:1,F:2,B:3,L:4,R:5}; let active=h.face||'F';
  const fallback={U:0,D:1,F:2,B:3,L:4,R:5};
  function cells(face){const fi=FI[face],arr=state?state.slice(fi*25,fi*25+25):Array(25).fill(fallback[face]);
-  return arr.map((v,i)=>`<i data-i="${i}" style="background:${C[v]};${active===face?'filter:brightness(1.12)':''}"></i>`).join('')}
+  return arr.map((v,i)=>{let moving=stickerInMovingSlice(face,i,spec);return `<i data-i="${i}" class="${moving?'moving':''}" style="background:${C[v]}"></i>`}).join('')}
  let arrow=h.ft===2?'↻ 180°':h.ft===3?'↺ 90°':'↻ 90°';
+ let layerName=spec?(spec.start===spec.end?`слой ${spec.start+1}/5`:`слои ${spec.start+1}–${spec.end+1}/5`):'';
  return `<style>
  #c3wrap{position:absolute;inset:0;touch-action:none;user-select:none;overflow:hidden}
  #c3{--rx:-24deg;--ry:34deg;width:176px;height:176px;position:absolute;left:50%;top:48%;transform-style:preserve-3d;transform:translate(-50%,-50%) rotateX(var(--rx)) rotateY(var(--ry));transition:transform .18s ease}
  #c3 .fc{position:absolute;width:150px;height:150px;display:grid;grid-template-columns:repeat(5,1fr);gap:3px;padding:4px;background:#050608;border:1px solid #252b34;border-radius:8px;backface-visibility:visible;box-shadow:inset 0 0 18px #000}
- #c3 i{display:block;border-radius:3px;box-shadow:inset 0 0 0 1px #0008,inset 0 1px 2px #fff4}
- #c3 .active{outline:3px solid #fff9;box-shadow:0 0 28px #fff5,inset 0 0 18px #000}
+ #c3 i{display:block;border-radius:3px;box-shadow:inset 0 0 0 1px #0008,inset 0 1px 2px #fff4;opacity:.34;transition:.2s}
+ #c3 i.moving{opacity:1;outline:2px solid #fff;outline-offset:-2px;box-shadow:0 0 12px #fff9,inset 0 0 0 1px #0008;animation:movePulse .85s ease-in-out infinite alternate}
+ @keyframes movePulse{from{filter:brightness(1)}to{filter:brightness(1.45)}}
  .fF{transform:translateZ(75px)}.fB{transform:rotateY(180deg) translateZ(75px)}.fR{transform:rotateY(90deg) translateZ(75px)}.fL{transform:rotateY(-90deg) translateZ(75px)}.fU{transform:rotateX(90deg) translateZ(75px)}.fD{transform:rotateX(-90deg) translateZ(75px)}
- #moveArrow{position:absolute;right:15px;top:13px;font-size:17px;font-weight:900;padding:8px 10px;border-radius:12px;background:#05070bcc;border:1px solid #ffffff22}
+ #moveArrow{position:absolute;right:13px;top:12px;font-size:18px;font-weight:950;padding:9px 11px;border-radius:12px;background:#05070be8;border:1px solid #ffffff38;box-shadow:0 0 22px #000}
+ #moveArrow .arr{display:inline-block;font-size:26px;margin-left:5px;animation:arrowTurn .8s ease-in-out infinite alternate}
+ @keyframes arrowTurn{from{transform:rotate(-12deg) scale(.95)}to{transform:rotate(12deg) scale(1.08)}}
+ #layerBadge{position:absolute;right:13px;top:61px;font-size:11px;font-weight:800;padding:6px 8px;border-radius:9px;background:#05070bcc;color:#dce5f2;border:1px solid #ffffff1c}
  #dragHint{position:absolute;left:12px;top:13px;font-size:11px;color:#aeb7c6;background:#05070baa;padding:7px 9px;border-radius:10px}
- </style><div id="c3wrap"><div id="c3">${['F','B','R','L','U','D'].map(f=>`<div class="fc f${f} ${active===f?'active':''}">${cells(f)}</div>`).join('')}</div><div id="dragHint">↔ проведите пальцем, чтобы осмотреть</div><div id="moveArrow">${h.label} · ${arrow}</div></div><div style="position:absolute;left:14px;bottom:10px;font-size:12px;color:#aeb7c6"><b>Реальное состояние:</b> белая ↑ · зеленая спереди · красная справа</div>`;
+ </style><div id="c3wrap"><div id="c3">${['F','B','R','L','U','D'].map(f=>`<div class="fc f${f}">${cells(f)}</div>`).join('')}</div><div id="dragHint">↔ можно осмотреть куб</div><div id="moveArrow">${h.label}<span class="arr">${arrow}</span></div><div id="layerBadge">${layerName}</div></div><div style="position:absolute;left:14px;bottom:10px;font-size:12px;color:#aeb7c6"><b>Яркие клетки = слой, который двигается.</b><br>Белая ↑ · зеленая спереди · красная справа</div>`;
 }
 let orbitX=-24,orbitY=34;
 function enableCubeOrbit(){const wrap=$('#c3wrap'),cube=$('#c3');if(!wrap||!cube)return;let down=false,x=0,y=0;
@@ -329,10 +349,29 @@ function enableCubeOrbit(){const wrap=$('#c3wrap'),cube=$('#c3');if(!wrap||!cube
  wrap.onpointermove=e=>{if(!down)return;orbitY+=(e.clientX-x)*.45;orbitX-=(e.clientY-y)*.35;orbitX=Math.max(-80,Math.min(80,orbitX));x=e.clientX;y=e.clientY;paint()};
  wrap.onpointerup=wrap.onpointercancel=()=>down=false;
 }
-function algHint(i){const hs=[];for(let k=i;k<Math.min(solution.length,i+7);k++)hs.push(humanMove(moveSpecs[k],solution[k]).label);let q=hs.join(' ');if(q.startsWith("R U R' U'"))return ['ПИФ-ПАФ',4];if(q.startsWith("R' U' R U"))return ['ОБРАТНЫЙ ПИФ-ПАФ',4];if(q.startsWith("R U R' F R' F' R"))return ['ПЕРЕВОРОТ РЕБРА',7];return null}
-function phaseText(){return 'Reduction: центры → ребра → этап 3×3';}
-function renderSolution(r){$('#resultTitle').textContent=`Решение найдено`;$('#resultMeta').innerHTML=`${phaseText()}. Куб держим в одной системе координат: <span class="cword cw">БЕЛАЯ</span> сверху · <span class="cword cg">ЗЕЛЕНАЯ</span> спереди · <span class="cword cr">КРАСНАЯ</span> справа. Обозначения соответствуют стандартной NxN-нотации.`;renderStep()}
-function renderStep(){if(!solution.length)return;step=Math.max(0,Math.min(step,solution.length-1));let h=humanMove(moveSpecs[step],solution[step]),hint=algHint(step);const visualState=stateBeforeStep(step);$('#cube3d').innerHTML=cube3D(h,visualState);enableCubeOrbit();$('#bigmove').textContent=h.label;$('#moveInstruction').innerHTML=`<b>Ход ${step+1} из ${solution.length}</b>${hint?` · <b>${hint[0]}</b>`:''}<br>${h.text}<br><span class="explain">Не поворачивайте весь куб. На 3D-схеме подсвечена рабочая грань; направление считается при взгляде прямо на нее. Для внутренних срезов ориентируйтесь прежде всего на подсвеченный слой/стрелку, а не на слова «по часовой».</span>`;$('#sliceViz').innerHTML='';$('#steps').innerHTML=solution.map((m,i)=>`<div class="move ${i===step?'current':''}">${humanMove(moveSpecs[i],m).label}</div>`).join('');setTimeout(()=>document.querySelector('.move.current')?.scrollIntoView({behavior:'smooth',inline:'center',block:'nearest'}),0);$('#prevMove').disabled=step===0;$('#nextMove').textContent=step===solution.length-1?'ГОТОВО ✓':'ВЫПОЛНЕНО →'}
-$('#prevMove').onclick=()=>{step--;renderStep()};$('#nextMove').onclick=()=>{if(step<solution.length-1){step++;renderStep()}else show('home')};$('#newCube').onclick=()=>show('home');
-if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js?v=11').catch(()=>{});
+function sameSpec(a,b){return a&&b&&a.axis===b.axis&&a.start===b.start&&a.end===b.end}
+function invSpec(a,b){if(!sameSpec(a,b))return false;let x=((a.turns+b.turns)%4+4)%4;return x===0}
+function algHint(i){
+ const hs=[];for(let k=i;k<Math.min(solution.length,i+9);k++)hs.push(humanMove(moveSpecs[k],solution[k]).label);let q=hs.join(' ');
+ if(q.startsWith("R U R' U'"))return ['ПИФ-ПАФ',4,'human'];
+ if(q.startsWith("R' U' R U"))return ['ОБРАТНЫЙ ПИФ-ПАФ',4,'human'];
+ if(q.startsWith("R U R' F R' F' R"))return ['ПЕРЕВОРОТ РЕБРА',7,'human'];
+ // Exact algebraic macros emitted heavily by the deterministic reducer.
+ // These do not change or approximate the solver path: only the presentation is grouped.
+ let m=moveSpecs;
+ if(i+3<m.length&&invSpec(m[i],m[i+2])&&invSpec(m[i+1],m[i+3]))return ['КОММУТАТОР',4,'human'];
+ if(i+2<m.length&&invSpec(m[i],m[i+2]))return ['ВСТАВКА',3,'human'];
+ return null;
+}
+function centersDone(colors){if(!colors)return false;for(let f=0;f<6;f++){let a=colors.slice(f*25,f*25+25),c=a[12];for(let r=1;r<=3;r++)for(let col=1;col<=3;col++)if(a[r*5+col]!==c)return false}return true}
+function edgesDone(colors){if(!colors||!centersDone(colors))return false;for(let f=0;f<6;f++){let a=colors.slice(f*25,f*25+25);let strips=[[1,2,3],[21,22,23],[5,10,15],[9,14,19]];for(let st of strips){let v=a[st[0]];if(st.some(x=>a[x]!==v))return false}}return true}
+function analyzePhases(){phaseAt=Array(solution.length).fill('centers');if(!solveStartColors)return;try{let lab=new CubeLab(5);if(!lab.load_face_colors(solveStartColors))return;for(let i=0;i<solution.length;i++){let c=Array.from(lab.face_colors(5));phaseAt[i]=edgesDone(c)?'3x3':centersDone(c)?'edges':'centers';applySpec(lab,moveSpecs[i]);}}catch{}}
+function phaseLabel(p){return p==='centers'?'ЦЕНТРЫ':p==='edges'?'РЕБРА':'3×3'}
+function buildAdaptiveBlocks(){adaptiveBlocks=[];for(let i=0;i<solution.length;){let h=algHint(i),len=(guideMode==='raw'||!h)?1:h[1];adaptiveBlocks.push({start:i,len,name:h?h[0]:null,kind:h?h[2]:'machine',phase:phaseAt[i]||'centers'});i+=len}}
+function blockForStep(i){return adaptiveBlocks.find(b=>b.start===i)||{start:i,len:1,name:null,kind:'machine',phase:phaseAt[i]||'centers'}}
+function blockStats(){return adaptiveBlocks.length}
+function renderSolution(r){analyzePhases();buildAdaptiveBlocks();let human=adaptiveBlocks.filter(b=>b.kind==='human').length,machine=adaptiveBlocks.length-human;$('#resultTitle').textContent=`Решение найдено`;$('#resultMeta').innerHTML=`Replay verified · ${solution.length} физических ходов → <b>${adaptiveBlocks.length} действий</b> · Human-блоков: ${human} · пошаговых: ${machine}. Адаптивный режим переключается только там, где последовательность можно объединить без изменения решения. Куб: <span class="cword cw">БЕЛАЯ</span> ↑ · <span class="cword cg">ЗЕЛЕНАЯ</span> вперед · <span class="cword cr">КРАСНАЯ</span> справа.`;renderStep()}
+function renderStep(){if(!solution.length)return;step=Math.max(0,Math.min(step,solution.length-1));let h=humanMove(moveSpecs[step],solution[step]),block=blockForStep(step),visualState=stateBeforeStep(step);$('#cube3d').innerHTML=cube3D(h,visualState,moveSpecs[step]);enableCubeOrbit();$('#bigmove').textContent=h.label;let mode=block.kind==='human'?`🧩 HUMAN · ${block.name}`:'⚙️ MACHINE · ТОЧНЫЙ ХОД';$('#moveInstruction').innerHTML=`<b>${phaseLabel(block.phase)} · ${mode}</b><br><b>Действие ${adaptiveBlocks.findIndex(b=>b.start===step)+1} из ${adaptiveBlocks.length}</b> · физические ходы ${step+1}${block.len>1?'–'+(step+block.len):''} из ${solution.length}<br>${h.text}<br><span class="explain">${block.len>1?`Это точный ${block.name.toLowerCase()} из ${block.len} ходов. 3D сейчас показывает первый ход блока; кнопка ниже применит весь блок по порядку.`:'Здесь безопасного человеческого макро-блока нет, поэтому AUTO временно переключился на машинный пошаговый режим.'} Яркими клетками показан движущийся слой.</span>`;$('#sliceViz').innerHTML='';$('#steps').innerHTML=adaptiveBlocks.map((b,j)=>`<div class="move ${b.start===step?'current':''}" title="${b.len} ходов">${b.kind==='human'?'🧩':'⚙️'} ${b.name||humanMove(moveSpecs[b.start],solution[b.start]).label}</div>`).join('');setTimeout(()=>document.querySelector('.move.current')?.scrollIntoView({behavior:'smooth',inline:'center',block:'nearest'}),0);let bi=adaptiveBlocks.findIndex(b=>b.start===step);$('#prevMove').disabled=bi<=0;$('#nextMove').textContent=bi===adaptiveBlocks.length-1?'ГОТОВО ✓':(block.len>1?`${block.name} · ${block.len} ХОДА →`:'ВЫПОЛНЕНО →')}
+$('#prevMove').onclick=()=>{let bi=adaptiveBlocks.findIndex(b=>b.start===step);if(bi>0){step=adaptiveBlocks[bi-1].start;renderStep()}};$('#nextMove').onclick=()=>{let bi=adaptiveBlocks.findIndex(b=>b.start===step);if(bi>=0&&bi<adaptiveBlocks.length-1){step=adaptiveBlocks[bi+1].start;renderStep()}else show('home')};$('#newCube').onclick=()=>show('home');
+if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js?v=13').catch(()=>{});
 </script></body></html>

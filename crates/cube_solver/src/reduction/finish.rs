@@ -389,6 +389,28 @@ pub fn solve_reduction(cube: &mut StickerCube, solver: &Solver) -> Option<Vec<Mo
     solve_reduction_core(cube, solver).map(simplify)
 }
 
+/// Experimental compact 5x5 lane. It uses the older propose-and-verify centre/edge
+/// placers, which often emit substantially shorter human-scale commutator sequences.
+/// It is never trusted on its own: callers must replay-verify the returned moves.
+/// If any stage stalls, this lane returns None and the robust deterministic reducer wins.
+pub fn solve_reduction_compact(cube: &mut StickerCube, solver: &Solver) -> Option<Vec<Move>> {
+    if cube.size().get() != 5 { return None; }
+    let mut work = cube.clone();
+    let mut moves = Vec::new();
+    moves.extend(super::centers::solve_centers(&mut work));
+    if !super::centers_solved(&work) { return None; }
+    moves.extend(super::edges::solve_edges(&mut work));
+    if !super::edges_paired(&work) { return None; }
+    moves.extend(finish_3x3(&mut work, solver)?);
+    if !work.is_solved() { return None; }
+    let moves = simplify(moves);
+    let mut replay = cube.clone();
+    for &mv in &moves { replay.apply_move(mv).ok()?; }
+    if !replay.is_solved() { return None; }
+    *cube = work;
+    Some(moves)
+}
+
 pub fn solve_reduction_with_control(
     cube: &mut StickerCube,
     solver: &Solver,

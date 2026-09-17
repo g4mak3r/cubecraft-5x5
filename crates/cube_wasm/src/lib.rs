@@ -335,14 +335,26 @@ impl CubeLab {
         control: &cube_solver::reduction::ReductionControl,
     ) -> Option<String> {
         let original = self.cube.clone();
-        let mut work = original.clone();
-        let solution = with_kociemba(|s| {
-            cube_solver::reduction::solve_reduction_with_control(&mut work, s, control)
-        })
-        .ok()?;
-        if !work.is_solved() {
-            return None;
+
+        // 5x5 runs two genuinely different reduction lanes. The compact lane uses
+        // propose-and-verify human-scale centre/edge commutators; the deterministic
+        // lane remains the completeness/reliability fallback. Only replay-verified
+        // solved candidates participate, and the shorter candidate wins.
+        let mut candidates: Vec<(Vec<Move>, StickerCube, &'static str)> = Vec::new();
+        if self.n == 5 {
+            let mut compact = original.clone();
+            if let Some(sol) = with_kociemba(|s| cube_solver::reduction::solve_reduction_compact(&mut compact, s)) {
+                if compact.is_solved() { candidates.push((sol, compact, "compact-reduction")); }
+            }
         }
+        let mut robust = original.clone();
+        if let Ok(sol) = with_kociemba(|s| {
+            cube_solver::reduction::solve_reduction_with_control(&mut robust, s, control)
+        }) {
+            if robust.is_solved() { candidates.push((sol, robust, "deterministic-reduction")); }
+        }
+        candidates.sort_by_key(|(sol, _, _)| sol.len());
+        let (solution, work, lane) = candidates.into_iter().next()?;
         let mut replay = original;
         for &mv in &solution {
             replay.apply_move(mv).ok()?;
@@ -382,12 +394,13 @@ impl CubeLab {
             serde_json::json!({
                 "found": true,
                 "winner": "reduction",
+                "reductionLane": lane,
                 "moveCount": htm,
                 "elapsedMs": 0,
                 "moves": moves_json,
                 "notation": notation,
                 "moveSpecs": move_specs,
-                "lanes": [ { "id": "reduction", "pct": 100, "moveCount": htm, "label": "reduction", "solved": true } ],
+                "lanes": [ { "id": lane, "pct": 100, "moveCount": htm, "label": lane, "solved": true } ],
             })
             .to_string(),
         )

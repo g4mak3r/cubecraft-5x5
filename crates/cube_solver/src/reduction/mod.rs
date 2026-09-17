@@ -143,7 +143,7 @@ pub use edges::edges_paired;
 // The deterministic edge solver (perm-tracking, like `centers_det`) is the real one;
 // the greedy `edges::solve_edges` is kept behind `--features reduction` as a fallback.
 pub use edges_det::solve_edges;
-pub use finish::{finish_3x3, solve_reduction, solve_reduction_with_control};
+pub use finish::{finish_3x3, solve_reduction, solve_reduction_compact, solve_reduction_with_control};
 
 /// The single inner layer `depth` layers in from `face` (depth 0 = the outer
 /// face layer). Sign matches `Move::wide`, so `slice_from(f, n, 0, t) ==

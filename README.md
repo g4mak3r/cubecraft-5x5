@@ -1,43 +1,15 @@
-# CUBECRAFT 5×5
+# CUBECRAFT 5x5 v14 — Dual Reduction Race
 
-Mobile-first camera-assisted 5×5 Rubik's Cube solver for GitHub Pages.
+Offline GitHub Pages/WASM build for 5x5 camera solving.
 
-## Deploy
-1. Create a GitHub repository.
-2. Upload the contents of this ZIP to the repository root.
-3. In Settings → Pages set **Source: GitHub Actions**.
-4. Open Actions and wait for **Build and deploy CUBECRAFT** to finish.
-5. Open the Pages URL over HTTPS and allow camera access.
+## v14 solver change
+For 5x5 the Rust/WASM path now has two distinct reduction lanes:
+- `compact-reduction`: legacy propose-and-verify center + edge placers, then the existing checked 3x3 finish.
+- `deterministic-reduction`: the existing robust deterministic reducer.
 
-The GitHub Action compiles the included Rust solver to WebAssembly. No server/API is required at runtime.
+Both candidates must finish solved and then pass the existing independent replay gate. The shorter valid candidate is returned. If compact stalls, deterministic remains the fallback.
 
-## Scan orientation
-The app guides the six faces in the solver's required order:
-Up/white, Down/yellow, Front/green, Back/blue, Left/orange, Right/red.
-Keep the indicated UP/FRONT reference while scanning so sticker orientation is preserved.
+The existing 3D exact-slice guidance and adaptive human/machine presentation are preserved.
 
-The 5×5 solve uses the included deterministic reduction engine and independently replays all returned low-level moves before displaying the solution.
-
-## v3 scanner integration
-The camera grid is converted to the solver's exact `Face::ALL` order: Up, Down, Front, Back, Left, Right. The Down-face guide intentionally places the green/front edge at the TOP of the camera frame (Up uses green at the BOTTOM), matching `cube_core::face_cell_to_coord`.
-Before a scan is sent to reduction, v3 enumerates in-plane face rotations and filters them against all eight legal/unique corner color triples. It then accepts an orientation only if the actual reduction result independently replays to solved.
-
-`/selftest.html` bypasses the camera entirely: it creates a legal 5×5 scramble inside CubeLab, exports only its 150 sticker colors, sends those through the same Web Worker, and independently replays the returned moves. PASS proves the deployed solver pipeline itself is working.
-
-
-## CUBECRAFT v6 geometry
-Camera grids are converted to Cube-Solver U,D,F,B,L,R coordinates by enumerating the four in-plane rotations per face, filtering with the exact 8 corner color triples and 12 edge color pairs (three edgelets each on 5x5), then accepting only a Cube-Solver reduction result that independently replays to solved. No mirroring is applied.
-
-
-## CUBECRAFT v7
-- WASM now returns exact high-level move ranges (`moveSpecs`) in addition to animation quarter-turns.
-- Internal reduction notation such as `Z[1..=1]` is translated into physical human instructions.
-- Every step tells the user which coloured face to hold toward them, which slice/layers to turn, and the direction.
-- Scan guidance colour names are rendered in their actual colours.
-
-
-## CUBECRAFT v8
-- Russian step-by-step solve guidance.
-- Human descriptions for outer, wide and inner-slice turns.
-- Russian color words remain color-highlighted.
-- Keeps standard move notation as a compact secondary reference.
+## CI
+GitHub Actions is the authoritative Rust/WASM compilation/test gate. The generation environment used for this archive does not contain the Rust toolchain, so no claim is made that Rust was compiled locally before packaging.
